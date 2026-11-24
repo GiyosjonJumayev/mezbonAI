@@ -1,8 +1,12 @@
-# SilkRoad Experience OS
+# SilkRoad Experience OS 2.0
 
-**Every Local Experience. One Digital Platform.** [O‘zbekcha](docs/README.uz.md)
+**AI-powered Tourism Business Operating System.** Every Local Experience. One Digital Platform. [O‘zbekcha](docs/README.uz.md)
 
-An AI-powered operating system for local tourism businesses in Uzbekistan: artisans, family guesthouses and experience providers. They describe what they do in Uzbek, by voice or text, and sell it to travellers in ten languages.
+Not just a marketplace: a system that brings local tourism businesses in Uzbekistan online, helps them sell, and helps them earn more.
+
+1. **AI Business Assistant** creates a professional digital service from spoken Uzbek and helps run it.
+2. **Smart Experience Booking** manages the service, time slots, capacity, bookings and QR check-in.
+3. **Tourism Intelligence** shows what travellers look for and how the business performs.
 
 ![Home page](docs/screenshots/home.png)
 
@@ -10,18 +14,16 @@ Screenshots show made-up data. This is a working hackathon prototype: see [what 
 
 ## What it does
 
-| For | What they get |
+| Pillar | What is in it |
 |---|---|
-| **Providers** | Multilingual listings from Uzbek speech. Bookings and chat in Uzbek, live and read aloud. A calendar to open, close or resize any single time slot. QR ticket check-in. Revenue analytics. |
-| **Travellers** | Search by region, activity, date and group size in 10 languages. Book, chat, get a QR ticket, add to calendar, cancel up to 24 hours before, and review after the visit. |
-| **Hotels** | A QR code for the lobby and 8% of each booking made through it. |
-| **Tourism offices** | A panel of unmet demand: where travellers searched and found nothing. CSV export, no personal data. |
-| **AI assistants** | An MCP server to search, check availability and hold a place. Payment is always left to the traveller. |
+| **AI Business Assistant** | Listings in 10 languages from Uzbek speech. A chat that answers from the provider's own numbers and proposes changes: prices, slots, days off, texts, bookings, replies. A daily list of tasks and visits. A readiness score for each listing with the next step. |
+| **Smart Experience Booking** | Search by region, activity, date and group size. Per-slot capacity. Guests move or cancel a visit up to 24 hours before. Translated chat. QR tickets with one-time check-in. Hotel lobby QR codes. An MCP server for AI assistants, which never pays. |
+| **Tourism Intelligence** | Revenue, fees, conversion, busy hours, no-shows and CSV for providers. Price benchmarks, unmet demand and travel dates in the Business plan. A public panel of unmet demand by region, activity, date and language, with no personal data. |
 
 <table>
-<tr><td><img src="docs/screenshots/analytics.png" alt="Revenue analytics"></td><td><img src="docs/screenshots/calendar.png" alt="Slot calendar"></td></tr>
-<tr><td><img src="docs/screenshots/booking.png" alt="Booking with QR ticket and chat"></td><td><img src="docs/screenshots/host.png" alt="Provider studio in Uzbek"></td></tr>
-<tr><td><img src="docs/screenshots/market.png" alt="Market intelligence"></td><td><img src="docs/screenshots/panel.png" alt="Unmet demand by region"></td></tr>
+<tr><td><img src="docs/screenshots/assistant.png" alt="AI Business Assistant with daily tasks"></td><td><img src="docs/screenshots/calendar.png" alt="Slot calendar"></td></tr>
+<tr><td><img src="docs/screenshots/analytics.png" alt="Revenue analytics"></td><td><img src="docs/screenshots/market.png" alt="Market intelligence"></td></tr>
+<tr><td><img src="docs/screenshots/booking.png" alt="Booking with QR ticket and chat"></td><td><img src="docs/screenshots/panel.png" alt="Unmet demand by region"></td></tr>
 </table>
 
 ## Business model
@@ -31,6 +33,7 @@ Screenshots show made-up data. This is a working hackathon prototype: see [what 
 | Price per 30 days | 0 | 149 000 UZS | 490 000 UZS |
 | Commission on new bookings | 12% | 8% | 6% |
 | Listings on sale | 3 | unlimited | unlimited |
+| AI assistant messages per day | 15 | 100 | 300 |
 | Revenue analytics | 30 days | 1 year, by listing, channel and language, CSV | same as Pro |
 | Market intelligence | | | price benchmarks, unmet demand, tips |
 
@@ -40,6 +43,8 @@ Prices and limits are placeholders to test with real providers: change them in `
 
 - A listing cannot go live with a missing price or duration, and guided tours need a certificate number.
 - A place cannot be sold twice. Shrinking or closing a slot never cancels existing bookings.
+- The assistant cannot change anything by itself. Each proposed action needs the provider's approval and runs through the same checks as the buttons. Guest names, keys and booking links are not sent to the AI provider; guests' messages are, as data only.
+- Moving a visit keeps the price, needs the provider's approval again and replaces the ticket.
 - A ticket exists only for a confirmed booking, works once, on its own day, and only for its own provider.
 - Price benchmarks need at least three other listings, so no single competitor's price is revealed.
 
@@ -78,6 +83,7 @@ With the server running, add this to your MCP client, such as Claude Desktop:
 public/            pages in plain JavaScript modules, no build step
 src/core.mjs       listings, search, booking, capacity, chat, reviews, access
 src/business.mjs   plans, QR tickets, slot control, analytics, market intelligence
+src/assistant.mjs  AI Business Assistant: daily brief, chat, approved actions
 src/ai.mjs         Claude: structured extraction and translation
 src/extract.mjs    rule-based Uzbek extraction, the fallback when AI is unavailable
 src/db.mjs         SQLite schema and migrations
@@ -96,6 +102,8 @@ Four runtime dependencies: the Anthropic SDK, the MCP SDK, `zod` and `qrcode`. S
 - **Payments and subscriptions** are test buttons. No money moves. A licensed payment partner is needed. With `NODE_ENV=production` the buttons are off.
 - **GetYourGuide, Viator and Klook** are not connected. There is only a neutral export at `/feeds/products.json`.
 - **The Claude path** is tested against a stand-in server, not yet against the live API.
+- **Without a Claude key** the assistant understands a fixed set of Uzbek requests, not free conversation.
+- **Reminders** are not sent. Guests and providers see changes when they open the page; Telegram providers also get messages.
 - **Speech recognition** is the browser's own. It needs Chrome and internet, and sends audio to the browser vendor. Few devices have an Uzbek voice, so text is read with a Turkish one.
 - **Telegram** voice notes are not transcribed, and the bot has not been run against the live Telegram service.
 - **Translations** have not been reviewed by native speakers.

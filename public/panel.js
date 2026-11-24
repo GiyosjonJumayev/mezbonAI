@@ -13,6 +13,9 @@ const bars = (rows, name, cols) => {
       el("td.barcell", {}, el("div.bar", {}, r.unmet > 0 && el("i", { style: `width:${(r.unmet / max) * 80}%` }), el("span", {}, String(r.unmet)))), cols.map(([, k]) => el("td.n", {}, String(r[k]))))))));
 };
 
+const LANG = { uz: "O‘zbekcha", en: "Inglizcha", ru: "Ruscha", zh: "Xitoycha", ko: "Koreyscha", ja: "Yaponcha", tr: "Turkcha", ar: "Arabcha", de: "Nemischa", fr: "Fransuzcha" };
+const simple = (name, rows) => el("div.scroll", {}, el("table", {}, el("thead", {}, el("tr", {}, el("th", { scope: "col" }, name), el("th.n", { scope: "col" }, "Qidiruv"), el("th.n", { scope: "col" }, "Javobsiz"))), el("tbody", {}, rows.map(([k, x]) => el("tr", {}, el("td", {}, k), el("td.n", {}, String(x.n)), el("td.n", {}, String(x.unmet)))))));
+
 function csv() {
   const rows = [["viloyat", "javobsiz_qidiruv", "jami_qidiruv", "taklif"], ...data.regions.map((r) => [r.name, r.unmet, r.searches, r.listings])];
   const blob = new Blob(["﻿" + rows.map((r) => r.map((c) => `"${String(c).replaceAll('"', '""')}"`).join(",")).join("\r\n")], { type: "text/csv" });
@@ -41,6 +44,9 @@ async function load() {
     el("div.tiles", {}, tile("Mezbonlar ulushi (sinov to‘lovi)", som(p.totals.host)), tile("To‘langan bronlar", String(p.totals.bookings)), tile("Mehmonlar", String(p.totals.guests)), tile("Sotuvdagi takliflar", String(p.listings))),
     p.platform && el("section.card", {}, el("h2", {}, "Biznes model (sinov to‘lovlari)"), el("dl.facts", {}, [["Bron komissiyasi", som(p.totals.platform)], ["Faol obunalar", String(p.platform.subscribers)], ["Oylik obuna daromadi", som(p.platform.mrr)], ["Jami obuna to‘lovlari", som(p.platform.subscriptions)]].map(([k, v]) => el("div", {}, el("dt", {}, k), el("dd", {}, v)))), el("p.small.muted", {}, "Faqat sinov rejimida ko‘rinadi.")),
     el("section.card", {}, el("h2", {}, "Viloyatlar"), bars(p.regions, "Viloyat", [["Jami qidiruv", "searches"], ["Taklif", "listings"]])),
+    el("div.two", {},
+      el("section.card", {}, el("h2", {}, "Turistlar qaysi sanalarni qidirmoqda"), p.dates.length ? simple("Sana", p.dates.map((x) => [x.date, x])) : el("p.muted", {}, "Hali aniq sana bilan qidiruv yo‘q.")),
+      el("section.card", {}, el("h2", {}, "Qidiruv tillari"), p.languages.length ? simple("Til", p.languages.map((x) => [LANG[x.lang] ?? x.lang, x])) : el("p.muted", {}, "Hali haqiqiy qidiruv yo‘q."))),
     el("div.two", {},
       el("section.card", {}, el("h2", {}, "Mashg‘ulot turlari"), p.categories.length ? bars(p.categories, "Mashg‘ulot", [["Jami qidiruv", "searches"]]) : el("p.muted", {}, "Bu davrda mashg‘ulot turi bo‘yicha qidiruv yo‘q.")),
       el("section.card", {}, el("h2", {}, "Savdo kanallari"),

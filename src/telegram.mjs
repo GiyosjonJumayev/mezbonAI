@@ -68,7 +68,7 @@ export function createBot(core, send, { baseUrl = "http://localhost:4321" } = {}
 
 /** Sent by the web server when a Telegram host gets a paid booking or a guest message. */
 export function bookingNotice(b, type) {
-  if (type === "booking") return [`Yangi bron: ${b.title}\n${b.guest_name}, ${b.guests} kishi\n${b.date}, soat ${b.time}\nSizga: ${b.host_uzs.toLocaleString("ru-RU")} so‘m`,
+  if (type === "booking" || type === "moved") return [`${type === "moved" ? "Mehmon vaqtni o‘zgartirdi" : "Yangi bron"}: ${b.title}\n${b.guest_name}, ${b.guests} kishi\n${b.date}, soat ${b.time}\nSizga: ${b.host_uzs.toLocaleString("ru-RU")} so‘m`,
     [[{ text: "Qabul qilish", callback_data: `acc:${b.id}` }, { text: "Rad etish", callback_data: `dec:${b.id}` }]]];
   if (type === "cancelled") return [`Bron bekor qilindi: ${b.title}\n${b.guest_name}, ${b.date}, soat ${b.time}`];
   return [`Mehmondan xabar (${b.guest_name}): ${b.messages.findLast((m) => m.sender === "guest")?.translated ?? ""}`];

@@ -10,7 +10,7 @@ export const aiEnabled = () => Boolean(process.env.ANTHROPIC_API_KEY || process.
 let client;
 const getClient = () => (client ??= new Anthropic({ timeout: 90_000, maxRetries: 1 }));
 
-async function ask(schema, system, content) {
+export async function ask(schema, system, content) {
   const res = await getClient().beta.messages.parse({
     model: MODEL,
     max_tokens: 16000,
@@ -44,7 +44,7 @@ Use only what the host said. Never invent prices, durations, group sizes, awards
 category "tour" means a guided sightseeing excursion; workshops and home visits are not tours.
 Write uz (Latin script) and en: a title of at most 60 characters and a warm, concrete description of 2-4 sentences in the third person.`;
 
-const errText = (e) =>
+export const errText = (e) =>
   e instanceof Anthropic.AuthenticationError ? "API kalit noto‘g‘ri"
   : e instanceof Anthropic.RateLimitError ? "AI limiti tugadi"
   : e instanceof Anthropic.APIConnectionError ? "AI xizmatiga ulanib bo‘lmadi"

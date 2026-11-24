@@ -195,6 +195,25 @@ dialog .row { justify-content: flex-end; margin-block-start: 18px; }
 .toast { background: var(--ink); color: var(--bg); padding: 12px 18px; border-radius: 12px; max-width: 100%; font-weight: 500; pointer-events: auto; }
 .toast.bad { background: #a3271f; color: #fff; }
 
+/* Assistant */
+.pillars { display: grid; gap: 14px; }
+.pillars section { border-inline-start: 4px solid var(--turq); padding-inline-start: 14px; display: grid; gap: 4px; }
+.chips.sub { margin-block-start: -14px; }
+a.chip { min-height: 40px; padding: 7px 14px; border-radius: 99px; border: 1px solid var(--line); text-decoration: none; color: var(--ink); background: var(--card); font-weight: 500; font-size: .94rem; display: inline-flex; align-items: center; }
+a.chip[aria-current] { background: var(--ink); color: var(--bg); border-color: var(--ink); }
+.chat.tall { min-height: 260px; max-height: 520px; }
+.compose.with-mic { grid-template-columns: minmax(0, 1fr) auto auto; }
+@media (max-width: 480px) { .compose.with-mic { grid-template-columns: 1fr 1fr; } .compose.with-mic input { grid-column: 1 / -1; } }
+.proposals { gap: 8px; }
+.proposal { display: flex; gap: 10px; align-items: center; justify-content: space-between; flex-wrap: wrap; padding: 10px 14px; border: 1px solid var(--line); border-inline-start: 4px solid var(--saffron); border-radius: 10px; overflow-wrap: anywhere; }
+.proposal > span:first-child { flex: 1 1 200px; }
+.tasks { list-style: none; margin: 0; padding: 0; display: grid; gap: 12px; }
+.task { display: grid; gap: 8px; }
+.task + .task { border-block-start: 1px solid var(--line); padding-block-start: 12px; }
+.meter { height: 8px; border-radius: 99px; background: var(--soft); overflow: hidden; }
+.meter i { display: block; height: 100%; background: var(--turq); border-radius: 99px; }
+.row > .plate { width: 64px; }
+table.heat td.n { text-align: center; } table.heat th.n { text-align: center; }
 /* Calendar, tickets, plans */
 .cal { display: grid; gap: 14px; grid-template-columns: repeat(auto-fill, minmax(min(100%, 230px), 1fr)); }
 .day { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 14px; display: grid; gap: 10px; align-content: start; }
