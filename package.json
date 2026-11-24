@@ -1,0 +1,24 @@
+{
+  "name": "mezbon-ai",
+  "version": "0.2.0",
+  "description": "Uzbek craftspeople describe their craft by voice; Mezbon turns it into a bookable experience in ten languages.",
+  "private": true,
+  "license": "UNLICENSED",
+  "type": "module",
+  "engines": { "node": ">=24" },
+  "scripts": {
+    "start": "node --disable-warning=ExperimentalWarning --env-file-if-exists=.env src/server.mjs",
+    "dev": "node --watch --disable-warning=ExperimentalWarning --env-file-if-exists=.env src/server.mjs",
+    "mcp": "node --env-file-if-exists=.env src/mcp.mjs",
+    "telegram": "node --disable-warning=ExperimentalWarning --env-file-if-exists=.env src/telegram.mjs",
+    "reset": "node --disable-warning=ExperimentalWarning src/reset.mjs",
+    "check": "node scripts/check.mjs",
+    "test": "node --disable-warning=ExperimentalWarning --test \"test/*.test.mjs\""
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^1.13.0",
+    "@modelcontextprotocol/sdk": "^1.32.2",
+    "qrcode": "^1.5.4",
+    "zod": "^4.6.7"
+  }
+}
