@@ -58,6 +58,26 @@ const MIGRATIONS = [
    CREATE INDEX reviews_listing ON reviews(listing_id);
    CREATE INDEX messages_booking ON messages(booking_id);
    CREATE INDEX listings_host ON listings(host_id);`,
+
+  // v3: provider types, subscriptions, QR tickets, per-slot capacity, view counts
+  `ALTER TABLE hosts ADD COLUMN type TEXT NOT NULL DEFAULT 'artisan';
+   ALTER TABLE hosts ADD COLUMN plan TEXT NOT NULL DEFAULT 'free';
+   ALTER TABLE hosts ADD COLUMN plan_until TEXT;
+   ALTER TABLE bookings ADD COLUMN ticket_code TEXT;
+   ALTER TABLE bookings ADD COLUMN checked_in_at TEXT;
+   UPDATE bookings SET ticket_code = upper(hex(randomblob(6))) WHERE status='confirmed';
+   CREATE UNIQUE INDEX bookings_ticket ON bookings(ticket_code) WHERE ticket_code IS NOT NULL;
+   CREATE INDEX bookings_created ON bookings(listing_id, created_at);
+   CREATE TABLE slot_rules (
+     listing_id TEXT NOT NULL REFERENCES listings(id), date TEXT NOT NULL, time TEXT NOT NULL,
+     capacity INTEGER NOT NULL CHECK (capacity BETWEEN 0 AND 100), PRIMARY KEY (listing_id, date, time));
+   CREATE TABLE views (
+     listing_id TEXT NOT NULL REFERENCES listings(id), day TEXT NOT NULL, lang TEXT NOT NULL, n INTEGER NOT NULL,
+     PRIMARY KEY (listing_id, day, lang));
+   CREATE TABLE invoices (
+     id TEXT PRIMARY KEY, host_id TEXT NOT NULL REFERENCES hosts(id), plan TEXT NOT NULL, kind TEXT NOT NULL,
+     credit_uzs INTEGER NOT NULL, amount_uzs INTEGER NOT NULL, until TEXT NOT NULL, created_at TEXT NOT NULL);
+   CREATE INDEX invoices_host ON invoices(host_id);`,
 ];
 
 export function openDb(file) {

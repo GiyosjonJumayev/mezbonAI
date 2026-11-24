@@ -50,6 +50,8 @@ header.top { background: var(--night); color: var(--on-night); position: sticky;
 header.top .wrap { display: flex; align-items: center; gap: 4px 16px; flex-wrap: wrap; min-height: 60px; padding-block: 8px; }
 .brand { display: inline-flex; align-items: center; gap: 10px; font-weight: 750; font-size: 1.2rem; letter-spacing: -.02em; color: inherit; text-decoration: none; margin-inline-end: auto; }
 .brand img { width: 30px; height: 30px; }
+.brand span { font-weight: 450; color: var(--on-night-2); margin-inline-start: -4px; }
+@media (max-width: 380px) { .brand span { display: none; } }
 header.top nav { display: flex; gap: 2px; flex-wrap: wrap; }
 header.top nav a { color: var(--on-night-2); text-decoration: none; padding: 8px 10px; border-radius: 8px; font-weight: 500; }
 header.top nav a:hover { color: #fff; background: rgb(255 255 255 / .09); }
@@ -193,6 +195,32 @@ dialog .row { justify-content: flex-end; margin-block-start: 18px; }
 .toast { background: var(--ink); color: var(--bg); padding: 12px 18px; border-radius: 12px; max-width: 100%; font-weight: 500; pointer-events: auto; }
 .toast.bad { background: #a3271f; color: #fff; }
 
+/* Calendar, tickets, plans */
+.cal { display: grid; gap: 14px; grid-template-columns: repeat(auto-fill, minmax(min(100%, 230px), 1fr)); }
+.day { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 14px; display: grid; gap: 10px; align-content: start; }
+.day.off { background: transparent; border-style: dashed; }
+.slot { border: 1px solid var(--line); border-radius: 10px; padding: 10px; display: grid; gap: 8px; }
+.slot.shut { background: var(--soft); }
+.slot .row { gap: 6px; }
+button.mini { min-height: 40px; min-width: 40px; padding: 4px 8px; }
+button.mini.text { font-size: .86rem; font-weight: 500; }
+video { width: 100%; border-radius: 12px; background: #000; aspect-ratio: 4 / 3; object-fit: cover; }
+.ticket { justify-items: center; text-align: center; }
+.ticket .code { font-size: 1.25rem; letter-spacing: .08em; }
+.ticket.sheet { max-width: 560px; width: 100%; justify-self: center; }
+.ticket.sheet .facts { width: 100%; text-align: start; }
+.card.chosen { border: 2px solid var(--cobalt); }
+.plans .card { grid-template-rows: auto auto auto 1fr auto; }
+.perks { margin: 0; padding-inline-start: 1.1em; display: grid; gap: 6px; align-content: start; }
+.plot { position: relative; display: flex; align-items: flex-end; gap: 2px; height: 200px; padding-block-start: 26px; border-block-end: 1px solid var(--line); margin-block-end: 8px; }
+.col { flex: 1 1 0; min-width: 0; min-height: 0; height: 100%; padding: 0; border: 0; background: none; border-radius: 4px; display: flex; align-items: flex-end; justify-content: center; position: relative; }
+.col i { display: block; width: 100%; max-width: 24px; background: var(--bar); border-radius: 4px 4px 0 0; }
+.col:hover { background: var(--soft); }
+.col:active { transform: none; }
+.peak { position: absolute; top: -24px; font-size: .8rem; font-weight: 600; white-space: nowrap; pointer-events: none; }
+.col:first-child .peak, .col:nth-child(2) .peak, .col:nth-child(3) .peak { inset-inline-start: 0; }
+.col:last-child .peak, .col:nth-last-child(2) .peak, .col:nth-last-child(3) .peak, .col:nth-last-child(4) .peak { inset-inline-end: 0; }
+.tip { position: absolute; top: -8px; transform: translate(-50%, -100%); background: var(--ink); color: var(--bg); border-radius: 10px; padding: 8px 12px; display: grid; font-size: .86rem; width: max-content; max-width: 180px; pointer-events: none; z-index: 2; }
 /* Tables and bars */
 .scroll { overflow-x: auto; }
 table { border-collapse: collapse; width: 100%; }
@@ -206,5 +234,5 @@ td.barcell { width: 46%; min-width: 130px; }
 tbody tr:hover td { background: var(--soft); }
 .qrs { display: grid; gap: 20px; grid-template-columns: repeat(auto-fit, minmax(min(100%, 260px), 1fr)); }
 .qrs .card { justify-items: center; text-align: center; }
-.qr { width: 220px; border-radius: 12px; background: #fff; }
+.qr { width: 220px; aspect-ratio: 1; border-radius: 12px; background: #fff; }
 @media print { header.top, footer, .noprint { display: none !important; } body { background: #fff; color: #000; } .card { break-inside: avoid; border-color: #ccc; background: #fff; color: #000; } }

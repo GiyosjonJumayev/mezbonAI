@@ -39,6 +39,7 @@ async function load() {
     p.demoSearches > 0 && el("div.note.warn", {}, `Diqqat: ${p.demoSearches} ta qidiruv namuna ma’lumot. Faqat haqiqiylarini ko‘rish uchun “Namuna qidiruvlar”ni o‘chiring.`),
     top && el("div.note", {}, `Eng katta bo‘shliq: ${top.name}. ${top.unmet} ta qidiruv javobsiz, hali birorta ham taklif yo‘q.`),
     el("div.tiles", {}, tile("Mezbonlar ulushi (sinov to‘lovi)", som(p.totals.host)), tile("To‘langan bronlar", String(p.totals.bookings)), tile("Mehmonlar", String(p.totals.guests)), tile("Sotuvdagi takliflar", String(p.listings))),
+    p.platform && el("section.card", {}, el("h2", {}, "Biznes model (sinov to‘lovlari)"), el("dl.facts", {}, [["Bron komissiyasi", som(p.totals.platform)], ["Faol obunalar", String(p.platform.subscribers)], ["Oylik obuna daromadi", som(p.platform.mrr)], ["Jami obuna to‘lovlari", som(p.platform.subscriptions)]].map(([k, v]) => el("div", {}, el("dt", {}, k), el("dd", {}, v)))), el("p.small.muted", {}, "Faqat sinov rejimida ko‘rinadi.")),
     el("section.card", {}, el("h2", {}, "Viloyatlar"), bars(p.regions, "Viloyat", [["Jami qidiruv", "searches"], ["Taklif", "listings"]])),
     el("div.two", {},
       el("section.card", {}, el("h2", {}, "Mashg‘ulot turlari"), p.categories.length ? bars(p.categories, "Mashg‘ulot", [["Jami qidiruv", "searches"]]) : el("p.muted", {}, "Bu davrda mashg‘ulot turi bo‘yicha qidiruv yo‘q.")),

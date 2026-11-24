@@ -9,7 +9,7 @@ const BASE = process.env.MEZBON_URL || "http://localhost:4321";
 async function call(pathname, body) {
   let r;
   try { r = await fetch(BASE + pathname, body ? { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) } : {}); }
-  catch { throw new Error(`Mezbon server is not reachable at ${BASE}. Start it with: npm start`); }
+  catch { throw new Error(`SilkRoad server is not reachable at ${BASE}. Start it with: npm start`); }
   const v = await r.json();
   if (!r.ok) throw new Error((UI[`e_${v.code}`] ?? UI.e_other).en);
   return v;
@@ -19,7 +19,7 @@ const safe = (fn) => async (a) => {
   catch (e) { return { isError: true, content: [{ type: "text", text: e.message }] }; }
 };
 
-const server = new McpServer({ name: "mezbon-ai", version: "0.2.0" });
+const server = new McpServer({ name: "silkroad-experience-os", version: "0.3.0" });
 
 server.registerTool("search_experiences", {
   description: "Search craft workshops, cooking classes and village visits hosted by local people in Uzbekistan. Returns the price per person in UZS, capacity and rating. Pass date and guests to keep only listings with free places. Listings with sample=true are demo data; say so to the traveller.",

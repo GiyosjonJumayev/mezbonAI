@@ -1,29 +1,47 @@
-# Mezbon AI
+# SilkRoad Experience OS
 
-[O‘zbekcha](docs/README.uz.md)
+**Every Local Experience. One Digital Platform.** [O‘zbekcha](docs/README.uz.md)
 
-A potter in Rishton describes their craft in Uzbek. Mezbon turns it into an experience that travellers can book in ten languages.
+An AI-powered operating system for local tourism businesses in Uzbekistan: artisans, family guesthouses and experience providers. They describe what they do in Uzbek, by voice or text, and sell it to travellers in ten languages.
 
 ![Home page](docs/screenshots/home.png)
 
-*Mezbon* means "host" in Uzbek. This is a working hackathon prototype: see [what is not real yet](#what-is-not-real-yet).
+Screenshots show made-up data. This is a working hackathon prototype: see [what is not real yet](#what-is-not-real-yet).
 
 ## What it does
 
 | For | What they get |
 |---|---|
-| **Hosts** | Speak or type in Uzbek. Price, duration, place and group size are extracted, and text is prepared in 10 languages. Bookings and questions arrive in Uzbek, live, and are read aloud. |
-| **Travellers** | Search by region, activity, date and group size. Book, chat, add to calendar, cancel up to 24 hours before, and review after the visit. Arabic is right to left. |
+| **Providers** | Multilingual listings from Uzbek speech. Bookings and chat in Uzbek, live and read aloud. A calendar to open, close or resize any single time slot. QR ticket check-in. Revenue analytics. |
+| **Travellers** | Search by region, activity, date and group size in 10 languages. Book, chat, get a QR ticket, add to calendar, cancel up to 24 hours before, and review after the visit. |
 | **Hotels** | A QR code for the lobby and 8% of each booking made through it. |
 | **Tourism offices** | A panel of unmet demand: where travellers searched and found nothing. CSV export, no personal data. |
 | **AI assistants** | An MCP server to search, check availability and hold a place. Payment is always left to the traveller. |
 
-Some rules are enforced in code: a listing cannot go live with a missing price or duration, guided tours need a certificate number, and a place cannot be sold twice.
-
 <table>
-<tr><td><img src="docs/screenshots/listing.png" alt="Listing page with date and time selection"></td><td><img src="docs/screenshots/booking.png" alt="Booking in Chinese with translated chat"></td></tr>
-<tr><td><img src="docs/screenshots/host.png" alt="Host studio in Uzbek"></td><td><img src="docs/screenshots/panel.png" alt="Unmet demand by region"></td></tr>
+<tr><td><img src="docs/screenshots/analytics.png" alt="Revenue analytics"></td><td><img src="docs/screenshots/calendar.png" alt="Slot calendar"></td></tr>
+<tr><td><img src="docs/screenshots/booking.png" alt="Booking with QR ticket and chat"></td><td><img src="docs/screenshots/host.png" alt="Provider studio in Uzbek"></td></tr>
+<tr><td><img src="docs/screenshots/market.png" alt="Market intelligence"></td><td><img src="docs/screenshots/panel.png" alt="Unmet demand by region"></td></tr>
 </table>
+
+## Business model
+
+| | Free | Pro | Business |
+|---|---|---|---|
+| Price per 30 days | 0 | 149 000 UZS | 490 000 UZS |
+| Commission on new bookings | 12% | 8% | 6% |
+| Listings on sale | 3 | unlimited | unlimited |
+| Revenue analytics | 30 days | 1 year, by listing, channel and language, CSV | same as Pro |
+| Market intelligence | | | price benchmarks, unmet demand, tips |
+
+Prices and limits are placeholders to test with real providers: change them in `PLANS` in `src/business.mjs`. Plans never renew by themselves. Upgrading credits unused days. A plan change only affects new bookings.
+
+## Rules enforced in code
+
+- A listing cannot go live with a missing price or duration, and guided tours need a certificate number.
+- A place cannot be sold twice. Shrinking or closing a slot never cancels existing bookings.
+- A ticket exists only for a confirmed booking, works once, on its own day, and only for its own provider.
+- Price benchmarks need at least three other listings, so no single competitor's price is revealed.
 
 ## Run it
 
@@ -34,7 +52,7 @@ npm install
 npm start
 ```
 
-Open <http://localhost:4321> (travellers), `/mezbon` (hosts), `/panel` (demand) or `/qr` (hotel codes). The first start adds clearly marked sample data.
+Open <http://localhost:4321> (travellers), `/mezbon` (providers), `/panel` (demand) or `/qr` (hotel codes). The first start adds clearly marked sample data.
 
 | Command | Purpose |
 |---|---|
@@ -51,14 +69,15 @@ No configuration is needed. Without an API key the app runs in **demo mode**: fa
 With the server running, add this to your MCP client, such as Claude Desktop:
 
 ```json
-{ "mcpServers": { "mezbon": { "command": "node", "args": ["/path/to/mezbon-ai/src/mcp.mjs"] } } }
+{ "mcpServers": { "silkroad": { "command": "node", "args": ["/path/to/mezbonAI/src/mcp.mjs"] } } }
 ```
 
 ## How it is built
 
 ```
 public/            pages in plain JavaScript modules, no build step
-src/core.mjs       all business rules: booking, capacity, revenue split, access
+src/core.mjs       listings, search, booking, capacity, chat, reviews, access
+src/business.mjs   plans, QR tickets, slot control, analytics, market intelligence
 src/ai.mjs         Claude: structured extraction and translation
 src/extract.mjs    rule-based Uzbek extraction, the fallback when AI is unavailable
 src/db.mjs         SQLite schema and migrations
@@ -74,13 +93,15 @@ Four runtime dependencies: the Anthropic SDK, the MCP SDK, `zod` and `qrcode`. S
 
 ## What is not real yet
 
-- **Payments** are a test button. No money moves. A licensed payment partner is needed. With `NODE_ENV=production` the button is off.
+- **Payments and subscriptions** are test buttons. No money moves. A licensed payment partner is needed. With `NODE_ENV=production` the buttons are off.
 - **GetYourGuide, Viator and Klook** are not connected. There is only a neutral export at `/feeds/products.json`.
 - **The Claude path** is tested against a stand-in server, not yet against the live API.
 - **Speech recognition** is the browser's own. It needs Chrome and internet, and sends audio to the browser vendor. Few devices have an Uzbek voice, so text is read with a Turkish one.
 - **Telegram** voice notes are not transcribed, and the bot has not been run against the live Telegram service.
 - **Translations** have not been reviewed by native speakers.
-- **Sign-in** for hosts is a secret link. There is no SMS check or recovery.
+- **Overnight stays** are not supported. Guesthouses can sell experiences such as dinners or workshops.
+- **The in-app camera scanner** has not been tried on a real phone and needs HTTPS there. A phone's own camera app also works, and codes can be typed.
+- **Sign-in** for providers is a secret link, one per business. There are no staff accounts, SMS check or recovery.
 - **Guide certificates** are asked for but not checked against a registry.
 - **The panel** is public. It shows totals only.
 - **HTTPS** is not included. Put a reverse proxy in front before going online.

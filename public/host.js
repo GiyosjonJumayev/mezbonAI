@@ -1,4 +1,5 @@
 import { act, api, ask, copy, el, listen, plate, som, store, tint, toast, visual } from "/common.js";
+import { analytics, calendar, market, PLAN_NAME, plans, tickets } from "/studio.js";
 
 const app = document.getElementById("app");
 let cfg;
@@ -35,15 +36,16 @@ function speak(text) {
 
 // ---- first visit ----------------------------------------------------------------------------
 function welcome() {
+  const type = el("select", {}, Object.keys(cfg.providerTypes).map((k) => el("option", { value: k }, cfg.providerTypes[k].uz)));
   const name = el("input", { maxlength: 60, required: true, autocomplete: "name" }), btn = el("button.primary", { type: "submit" }, "Boshlash");
   page(el("div.two", {},
-    el("div.stack", { style: "gap:22px" }, el("h1", {}, "Gapirib bering, qolganini biz tayyorlaymiz"), el("p.muted", {}, "Hunaringizni o‘zbekcha aytasiz. Mehmonlar uni o‘z tilida o‘qiydi va bron qiladi."),
-      el("ol.steps", {}, ["Nima o‘rgatishingizni aytib bering", "Tayyor taklifni tekshirib, e’lon qiling", "Bron va savollarga o‘zbekcha javob bering"].map((x) => el("li", {}, x)))),
+    el("div.stack", { style: "gap:22px" }, el("h1", {}, "Mahalliy madaniyatni daromadga aylantiring"), el("p.muted", {}, "Taklif, bron, QR chipta va daromad tahlili bitta kabinetda. O‘zbekcha gapirasiz, mehmonlar o‘z tilida o‘qiydi va bron qiladi."),
+      el("ol.steps", {}, ["Nima o‘rgatishingizni aytib bering", "Tayyor taklifni tekshirib, e’lon qiling", "Bronni qabul qiling, QR chiptani skanerlang, daromadni kuzating"].map((x) => el("li", {}, x)))),
     el("form.card", { onsubmit: async (e) => {
       e.preventDefault();
       btn.disabled = true;
-      try { const h = await api("/api/hosts", { name: name.value }); key = h.key; store.set("hostKey", key); location.hash = "yangi"; await start(); } catch (err) { toast(err.message, true); btn.disabled = false; }
-    } }, el("h2", {}, "Kabinet ochish"), el("label", {}, "Ismingiz", name), btn, el("p.small.muted", {}, "Avval ochganmisiz? Shaxsiy kirish havolangizni shu qurilmada oching."))));
+      try { const h = await api("/api/hosts", { name: name.value, type: type.value }); key = h.key; store.set("hostKey", key); if (!location.hash) location.hash = "yangi"; await start(); } catch (err) { toast(err.message, true); btn.disabled = false; }
+    } }, el("h2", {}, "Kabinet ochish"), el("label", {}, "Ismingiz yoki biznes nomi", name), el("label", {}, "Faoliyatingiz", type), btn, el("p.small.muted", {}, "Avval ochganmisiz? Shaxsiy kirish havolangizni shu qurilmada oching."))));
 }
 
 // ---- new listing ----------------------------------------------------------------------------
@@ -193,6 +195,7 @@ function bookingCard(b) {
   const decide = (what) => act(async () => { home = await api(`/api/host/bookings/${b.id}/${what}`, {}, key); draw(); });
   return el("div.card", {}, el("div.row.between", {}, el("h3", {}, b.title), el("span.badge" + tone, {}, label)),
     el("dl.facts", {}, [["Mehmon", `${b.guest_name}, ${b.guests} kishi`], ["Vaqt", `${uzDate(b.date)}, ${b.time}`], ["Sizga", som(b.host_uzs)], ["Tili va kanali", `${cfg.langNames[b.lang]}, ${CHANNEL[b.channel]}`]].map(([k, v]) => el("div", {}, el("dt", {}, k), el("dd", {}, v)))),
+    b.checked_in_at && el("div.note.ok", {}, "Mehmon chipta bilan keldi"),
     b.status === "paid" && el("div.row", {}, el("button.primary", { onclick: decide("accept") }, "Qabul qilish"),
       el("button", { onclick: act(async () => { if (await ask("Bron rad etilsinmi? Mehmonga xabar boradi.", "Rad etish", "Yo‘q")) { home = await api(`/api/host/bookings/${b.id}/decline`, {}, key); draw(); } }) }, "Rad etish")),
     b.messages.length > 0 && el("div.chat", { role: "log" }, b.messages.map((m) => { const mine = m.sender === "host"; return el("div.msg" + (mine ? ".me" : ""), { dir: "auto" }, mine ? m.original : m.translated,
@@ -221,7 +224,7 @@ function account() {
   return el("div.two", {}, el("div.card", {}, el("h2", {}, "Shaxsiy kirish havolasi"), el("p", {}, "Boshqa telefon yoki kompyuterda kabinetga shu havola orqali kirasiz. Saqlab qo‘ying va hech kimga bermang: havolani olgan odam kabinetingizni boshqaradi."),
     el("div.row", {}, el("button.primary", { onclick: async () => { if (await copy(link)) toast("Havola nusxalandi"); else toast("Nusxalab bo‘lmadi", true); } }, "Havolani nusxalash"),
       el("button.danger", { onclick: async () => { if (!(await ask("Bu qurilmadan chiqasizmi? Havolani saqlamagan bo‘lsangiz, kabinetga qaytib bo‘lmaydi.", "Chiqish", "Qolish"))) return; stop?.(); store.set("hostKey", null); key = home = null; history.replaceState(null, "", "/mezbon"); welcome(); } }, "Chiqish"))),
-  el("div.card", {}, el("h2", {}, "Daromad taqsimoti"), el("dl.sum", {}, [["Saytdan yoki AI orqali bron", `${100 - cfg.fees.web.platform}% sizga`], ["Mehmonxona QR orqali bron", `${100 - cfg.fees.hotel.platform - cfg.fees.hotel.hotel}% sizga`]].map(([k, v]) => [el("dt", {}, k), el("dd.all", {}, v)]))));
+  el("div.card", {}, el("h2", {}, "Biznes ma’lumotlari"), el("dl.sum", {}, [["Faoliyat turi", cfg.providerTypes[home.type].uz], ["Tarif", PLAN_NAME[home.plan.plan]], ["Saytdan yoki AI orqali bron", `${100 - home.plan.commission}% sizga`], ["Mehmonxona QR orqali bron", `${100 - home.plan.commission - cfg.hotelFee}% sizga`]].map(([k, v]) => [el("dt", {}, k), el("dd.all", {}, v)]))));
 }
 
 // ---- shell ----------------------------------------------------------------------------------
@@ -231,14 +234,16 @@ function draw() {
   const kept = Object.fromEntries([...app.querySelectorAll("[data-keep]")].map((i) => [i.dataset.keep, i.value])), active = document.activeElement?.dataset?.keep;
   const [where, lid] = tab().split("/");
   const l = home.listings.find((x) => x.id === lid);
-  const body = where === "yangi" ? composer() : where === "taklif" && l ? editor(l) : where === "tayyor" && l ? done(l) : where === "takliflar" || lid ? listings() : where === "hisob" ? account() : bookings();
-  const cur = { taklif: "takliflar", tayyor: "takliflar" }[where] ?? where;
+  const ctx = { key, cfg, home, reload };
+  const body = where === "yangi" ? composer() : where === "kalendar" ? calendar(ctx) : where === "chipta" || where === "chiptalar" ? tickets(ctx, lid) : where === "tahlil" ? analytics(ctx) : where === "bozor" ? market(ctx) : where === "tarif" ? plans(ctx) : where === "taklif" && l ? editor(l) : where === "tayyor" && l ? done(l) : where === "takliflar" || (lid && where !== "chipta") ? listings() : where === "hisob" ? account() : bookings();
+  const cur = { taklif: "takliflar", tayyor: "takliflar", chipta: "chiptalar" }[where] ?? where;
   const go = (id, text, n) => el("a", { href: "#" + id, "aria-current": cur === id ? "page" : null }, text, n > 0 && el("span.count", { "aria-label": `${n} ta yangi` }, String(n)));
-  page(el("div.row.between", {}, el("h1", {}, home.name), el("a.btn.primary", { href: "#yangi" }, "Yangi taklif")),
+  page(el("div.row.between", {}, el("div.row", {}, el("h1", {}, home.name), home.plan.plan !== "free" && el("span.badge.ok", {}, PLAN_NAME[home.plan.plan])), el("a.btn.primary", { href: "#yangi" }, "Yangi taklif")),
     cur === "bronlar" && home.bookings.length > 0 && el("div.tiles", {}, [["Tasdiqlangan daromad" + (cfg.testPayments ? " (sinov)" : ""), som(home.sums.earned)], ["Tasdiqlangan mehmonlar", String(home.sums.guests)], ["Javob kutayotgan bronlar", String(home.sums.waiting)]].map(([k, v]) => el("div.card.tile", {}, el("b", {}, v), el("span.muted", {}, k)))),
-    el("nav.tabs", { "aria-label": "Kabinet" }, go("bronlar", "Bronlar", home.sums.waiting), go("takliflar", "Takliflarim"), go("yangi", "Yangi taklif"), go("hisob", "Hisob")), body);
+    el("nav.tabs", { "aria-label": "Kabinet" }, go("bronlar", "Bronlar", home.sums.waiting), go("takliflar", "Takliflarim"), go("kalendar", "Kalendar"), go("chiptalar", "Chiptalar"), go("tahlil", "Daromad"), go("bozor", "Bozor tahlili"), go("tarif", "Tarif"), go("hisob", "Hisob")), body);
   for (const i of app.querySelectorAll("[data-keep]")) { i.value = kept[i.dataset.keep] ?? ""; if (i.dataset.keep === active) i.focus(); }
   for (const c of app.querySelectorAll(".chat")) c.scrollTo(0, 1e6);
+  app.querySelector(".tabs [aria-current]")?.scrollIntoView({ block: "nearest", inline: "center" });
 }
 async function reload() { home = await api("/api/host", null, key); }
 
