@@ -1,3 +1,5 @@
+import { art } from "/art.js";
+
 export async function api(path, body, key) {
   const headers = {};
   if (body) headers["Content-Type"] = "application/json";
@@ -5,6 +7,7 @@ export async function api(path, body, key) {
   let r;
   try { r = await fetch(path, { method: body ? "POST" : "GET", headers, body: body && JSON.stringify(body) }); }
   catch { throw Object.assign(new Error("Serverga ulanib bo‘lmadi. Internetni tekshiring"), { code: "network" }); }
+  document.documentElement.toggleAttribute("data-saved", r.headers.get("X-Saved") === "1");
   const v = await r.json().catch(() => ({ error: "Server javobi noto‘g‘ri", code: "other" }));
   if (!r.ok) throw Object.assign(new Error(v.error), { status: r.status, code: v.code });
   return v;
@@ -16,7 +19,7 @@ export function el(spec, props = {}, ...kids) {
   const n = document.createElement(tag || "div");
   if (cls.length) n.className = cls.join(" ");
   for (const [k, v] of Object.entries(props)) {
-    if (v == null || v === false) continue;
+    if (v == null || v === false || k === "before") continue;
     if (k.startsWith("on")) n[k] = v;
     else if (k === "dataset") Object.assign(n.dataset, v);
     else if (k === "value" || k === "textContent") n[k] = v;
@@ -129,5 +132,9 @@ export function plate(seed, category) {
   return svg;
 }
 
-export const visual = (l, alt = "") => (l.photo ? el("img.photo", { src: `/photos/${l.photo}`, alt, loading: "lazy" }) : plate(l.id ?? l.listing_id, l.category));
-export const tint = (category) => `--tint: color-mix(in srgb, ${(HUES[category] ?? HUES.pottery)[1]} 16%, var(--card))`;
+/** A schematic position for each region: column, row. */
+export const GEO = { qoraqalpogiston: [1, 1], xorazm: [2, 2], navoiy: [3, 2], buxoro: [3, 3], samarqand: [4, 3], jizzax: [5, 3], sirdaryo: [6, 3], toshkent: [6, 2], namangan: [7, 2], andijon: [8, 2], fargona: [7, 3], qashqadaryo: [4, 4], surxondaryo: [5, 4] };
+
+/** The provider's cover photo, or generated artwork for the craft. */
+export const visual = (l, alt = "") => (l.photo ? el("img.photo", { src: `/photos/${l.photo}`, alt, loading: "lazy" }) : art(l.id ?? l.listing_id, l.category));
+export const tint = () => null;

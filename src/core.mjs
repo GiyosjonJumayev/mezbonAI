@@ -53,20 +53,23 @@ const int = (v, name, min, max) => {
 const lang = (v) => (LANGS.includes(v) ? v : "en");
 const known = (map, v) => (typeof v === "string" && Object.hasOwn(map, v) ? v : null);
 
-export function createCore(db, { notify = () => {} } = {}) {
+export const MAX_PHOTOS = 6;
+
+export function createCore(db, { notify = () => {}, notifyGuest = () => {} } = {}) {
   const one = (sql, ...a) => db.prepare(sql).get(...a);
   const all = (sql, ...a) => db.prepare(sql).all(...a);
   const run = (sql, ...a) => db.prepare(sql).run(...a);
 
-  const full = (r) => r && { ...r, weekdays: JSON.parse(r.weekdays), times: JSON.parse(r.times), i18n: JSON.parse(r.i18n), edited: JSON.parse(r.edited), closed: JSON.parse(r.closed) };
+  const full = (r) => r && { ...r, weekdays: JSON.parse(r.weekdays), times: JSON.parse(r.times), i18n: JSON.parse(r.i18n), edited: JSON.parse(r.edited), closed: JSON.parse(r.closed), photos: JSON.parse(r.photos), photo: JSON.parse(r.photos)[0] ?? null };
   const publicListing = (r) => ({
     id: r.id, category: r.category, region: r.region, place: r.place, price_uzs: r.price_uzs, duration_min: r.duration_min,
-    capacity: r.capacity, weekdays: r.weekdays, times: r.times, i18n: r.i18n, photo: r.photo, host: r.host_name, host_type: r.host_type, demo: Boolean(r.host_demo),
+    capacity: r.capacity, weekdays: r.weekdays, times: r.times, i18n: r.i18n, photo: r.photo, photos: r.photos, hosted: r.hosted, host: r.host_name, host_type: r.host_type, demo: Boolean(r.host_demo),
     rating: r.rating == null ? null : Math.round(r.rating * 10) / 10, reviews: r.review_count,
   });
   const hostListing = (r) => ({ ...publicListing(r), status: r.status, cert_no: r.cert_no, transcript: r.transcript, engine: r.engine, edited: r.edited, closed: r.closed, missing: missing(r) });
   const LISTING = `SELECT l.*, h.name host_name, h.demo host_demo, h.type host_type, h.plan host_plan, h.plan_until host_plan_until,
-    (SELECT AVG(rating) FROM reviews WHERE listing_id=l.id) rating, (SELECT COUNT(*) FROM reviews WHERE listing_id=l.id) review_count
+    (SELECT AVG(rating) FROM reviews WHERE listing_id=l.id) rating, (SELECT COUNT(*) FROM reviews WHERE listing_id=l.id) review_count,
+    (SELECT COALESCE(SUM(guests),0) FROM bookings WHERE listing_id=l.id AND checked_in_at IS NOT NULL) hosted
     FROM listings l JOIN hosts h ON h.id = l.host_id`;
 
   function authHost(key) {
@@ -81,7 +84,7 @@ export function createCore(db, { notify = () => {} } = {}) {
     return l;
   }
   function booking(column, v) {
-    const b = one(`SELECT b.*, l.host_id, l.i18n, l.place, l.region, l.category, l.photo, l.duration_min, ho.name hotel_name, r.rating review_rating
+    const b = one(`SELECT b.*, l.host_id, l.i18n, l.place, l.region, l.category, json_extract(l.photos, '$[0]') photo, l.duration_min, ho.name hotel_name, r.rating review_rating
       FROM bookings b JOIN listings l ON l.id = b.listing_id LEFT JOIN hotels ho ON ho.code = b.hotel_code LEFT JOIN reviews r ON r.booking_id = b.id
       WHERE b.${column} = ?`, String(v ?? ""));
     return b && { ...b, i18n: JSON.parse(b.i18n) };
@@ -205,11 +208,24 @@ export function createCore(db, { notify = () => {} } = {}) {
       return hostListing(ownListing(key, lid));
     },
 
-    /** Returns the replaced file name so the caller can delete it. */
-    setPhoto(key, lid, file) {
-      const { photo: old } = ownListing(key, lid);
-      run("UPDATE listings SET photo=? WHERE id=?", file, lid);
-      return { listing: hostListing(ownListing(key, lid)), old };
+    addPhoto(key, lid, file) {
+      const { photos } = ownListing(key, lid);
+      if (photos.length >= MAX_PHOTOS) throw new AppError(409, `Ko‘pi bilan ${MAX_PHOTOS} ta rasm. Avval birini o‘chiring`);
+      run("UPDATE listings SET photos=? WHERE id=?", JSON.stringify([...photos, file]), lid);
+      return hostListing(ownListing(key, lid));
+    },
+    /** The first photo is the cover. The caller deletes the file itself. */
+    removePhoto(key, lid, file) {
+      const { photos } = ownListing(key, lid);
+      if (!photos.includes(file)) throw notFound("Rasm topilmadi");
+      run("UPDATE listings SET photos=? WHERE id=?", JSON.stringify(photos.filter((x) => x !== file)), lid);
+      return hostListing(ownListing(key, lid));
+    },
+    coverPhoto(key, lid, file) {
+      const { photos } = ownListing(key, lid);
+      if (!photos.includes(file)) throw notFound("Rasm topilmadi");
+      run("UPDATE listings SET photos=? WHERE id=?", JSON.stringify([file, ...photos.filter((x) => x !== file)]), lid);
+      return hostListing(ownListing(key, lid));
     },
     publish(key, lid) {
       const l = ownListing(key, lid), gaps = missing(l);
@@ -227,7 +243,7 @@ export function createCore(db, { notify = () => {} } = {}) {
       run("DELETE FROM slot_rules WHERE listing_id=?", lid);
       run("DELETE FROM views WHERE listing_id=?", lid);
       run("DELETE FROM listings WHERE id=?", lid);
-      return { photo: l.photo };
+      return { photos: l.photos };
     },
 
     search({ region, category, date, guests, lang: lg, source = "web", log = true }) {
@@ -281,6 +297,7 @@ export function createCore(db, { notify = () => {} } = {}) {
       return core.guestBooking(b.token);
     },
 
+    bookingId: (token) => guestOwn(token).id,
     guestBooking(token) {
       const b = guestOwn(token);
       return {
@@ -325,7 +342,7 @@ export function createCore(db, { notify = () => {} } = {}) {
       try {
         const free = slots(l, date, 1)[0]?.times.find((t) => t.time === time)?.free ?? 0;
         if (free < b.guests) throw new AppError(409, "Bu vaqtda joy yetarli emas", "full");
-        const r = run("UPDATE bookings SET date=?, time=?, status='paid', ticket_code=NULL, moved_at=? WHERE id=? AND status=? AND checked_in_at IS NULL", date, time, now(), b.id, b.status);
+        const r = run("UPDATE bookings SET date=?, time=?, status='paid', ticket_code=NULL, reminded_at=NULL, moved_at=? WHERE id=? AND status=? AND checked_in_at IS NULL", date, time, now(), b.id, b.status);
         if (!r.changes) throw new AppError(409, "Bron holati o‘zgargan", "state");
         db.exec("COMMIT");
       } catch (e) { db.exec("ROLLBACK"); throw e; }
@@ -348,6 +365,7 @@ export function createCore(db, { notify = () => {} } = {}) {
       if (!b || b.host_id !== h.id) throw notFound("Bron topilmadi");
       const r = run("UPDATE bookings SET status=?, ticket_code=? WHERE id=? AND status='paid'", accept ? "confirmed" : "declined", accept ? newTicketCode() : null, bid);
       if (!r.changes) throw new AppError(409, "Bron holati allaqachon o‘zgargan", "state");
+      notifyGuest(b, accept ? "confirmed" : "declined");
       return core.hostHome(key);
     },
 
@@ -362,7 +380,15 @@ export function createCore(db, { notify = () => {} } = {}) {
       run("INSERT INTO messages (booking_id,sender,original,lang,translated,translated_lang,engine,created_at) VALUES (?,?,?,?,?,?,?,?)",
         b.id, sender, t.original, from, t.translated, to, t.engine, now());
       if (sender === "guest") notify(b.host_id, { type: "message", id: b.id });
+      else notifyGuest(b, "message", t.translated);
       return msgs(b.id);
+    },
+
+    /** Confirmed visits starting within 24 hours that nobody was reminded of yet. Each is returned once. */
+    takeReminders() {
+      const clock = tashkentNow().slice(0, 16), limit = tashkentNow(new Date(Date.now() + 24 * 3600e3)).slice(0, 16);
+      const ids = all("SELECT id FROM bookings WHERE status='confirmed' AND reminded_at IS NULL AND checked_in_at IS NULL AND date||'T'||time > ? AND date||'T'||time <= ? LIMIT 200", clock, limit);
+      return ids.filter(({ id: bid }) => run("UPDATE bookings SET reminded_at=? WHERE id=? AND reminded_at IS NULL", now(), bid).changes).map(({ id: bid }) => booking("id", bid));
     },
 
     /** iCalendar file for a paid or confirmed booking. */

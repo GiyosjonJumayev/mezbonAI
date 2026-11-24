@@ -84,6 +84,15 @@ const MIGRATIONS = [
    ALTER TABLE searches ADD COLUMN for_date TEXT;
    ALTER TABLE searches ADD COLUMN guests INTEGER;
    ALTER TABLE bookings ADD COLUMN moved_at TEXT;`,
+
+  // v5: photo galleries, push subscriptions, visit reminders
+  `ALTER TABLE listings ADD COLUMN photos TEXT NOT NULL DEFAULT '[]';
+   UPDATE listings SET photos = json_array(photo) WHERE photo IS NOT NULL;
+   ALTER TABLE bookings ADD COLUMN reminded_at TEXT;
+   CREATE TABLE settings (k TEXT PRIMARY KEY, v TEXT NOT NULL);
+   CREATE TABLE push_subs (
+     kind TEXT NOT NULL CHECK (kind IN ('host','guest')), ref TEXT NOT NULL, endpoint TEXT NOT NULL,
+     p256dh TEXT NOT NULL, auth TEXT NOT NULL, created_at TEXT NOT NULL, PRIMARY KEY (kind, ref, endpoint));`,
 ];
 
 export function openDb(file) {

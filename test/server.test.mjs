@@ -23,7 +23,7 @@ const day = tashkentNow(new Date(Date.now() + 2 * 864e5)).slice(0, 10);
 test.after(() => { server.closeAllConnections(); server.close(); });
 
 test("pages load; paths outside public do not", async () => {
-  for (const p of ["/", "/mezbon", "/panel", "/qr", "/app.css", "/common.js", "/icon.svg", "/fonts/onest-latin-wght-normal.woff2", "/healthz"]) assert.equal((await fetch(base + p)).status, 200, p);
+  for (const p of ["/", "/mezbon", "/panel", "/qr", "/app.css", "/common.js", "/icon.svg", "/fonts/onest-latin-wght-normal.woff2", "/healthz", "/sw.js", "/manifest.webmanifest", "/icon192.png", "/theme.js"]) assert.equal((await fetch(base + p)).status, 200, p);
   for (const p of ["/package.json", "/..%2f.env", "/src/core.mjs", "/photos/..%2fmezbon.db", "/constructor"]) assert.equal((await fetch(base + p)).status, 404, p);
 });
 

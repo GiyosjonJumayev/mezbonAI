@@ -1,4 +1,4 @@
-# SilkRoad Experience OS 2.0
+# SilkRoad Experience OS 3.0
 
 **AI-powered Tourism Business Operating System**
 
@@ -19,6 +19,8 @@ Oddiy marketplace emas. Bu mahalliy turizm bizneslarini raqamlashtiradigan, ular
 3. **Tourism Intelligence**: talab va biznes natijalari.
    - Daromad, konversiya, eng band vaqtlar, kelmaganlar, CSV.
    - Narx taqqosi, javobsiz talab, turistlar qidirgan sanalar va tillar.
+
+**Yangi dizayn va qulayliklar**: telefonga o‘rnatiladigan ilova, internetsiz ochiladigan chipta, push bildirishnoma va tashrif eslatmasi, 6 tagacha rasm, saqlanganlar, hudud xaritasi, yorug‘ va qorong‘i mavzu.
 
 **Tariflar**: Bepul (12% komissiya, 3 taklif, kuniga 15 AI xabar), Pro (149 000 so‘m, 8%, 100), Business (490 000 so‘m, 6%, 300). Narxlar taxminiy: `src/business.mjs` dagi `PLANS` da o‘zgaradi.
 
@@ -72,7 +74,8 @@ Demo oldidan Claude kaliti bilan vaqtni o‘lchang. “60 soniya”ni faqat o‘
 - **GetYourGuide, Viator, Klook**: ulanmagan. Faqat `/feeds/products.json` eksporti bor.
 - **Namuna ma’lumot**: 4 ta mezbon, 3 ta mehmonxona, 96 ta qidiruv o‘ylab topilgan va belgilangan. `SEED=0` bilan o‘chiriladi.
 - **Claude kalitisiz** yordamchi faqat tayyor o‘zbekcha buyruqlarni tushunadi, erkin suhbat emas.
-- **Eslatmalar** yuborilmaydi: o‘zgarish sahifada ko‘rinadi, Telegram ulangan mezbonga xabar boradi.
+- **Push bildirishnomalar** sinov jo‘natuvchi bilan tekshirilgan, haqiqiy xizmat orqali hali emas. HTTPS (yoki localhost) va ruxsat kerak. Email va SMS yo‘q.
+- **Taklif rasmlari** avtomatik naqsh. Haqiqiy rasmni mezbon yuklaydi.
 - **Nutqni tanish**: brauzerniki (Chrome, internet kerak). Ovoz brauzer ishlab chiqaruvchisiga yuboriladi.
 - **Ovozli o‘qish**: ko‘p qurilmalarda o‘zbek ovozi yo‘q, turkcha ovoz ishlatiladi.
 - **Telegram ovozli xabarlari**: matnga aylantirilmaydi.

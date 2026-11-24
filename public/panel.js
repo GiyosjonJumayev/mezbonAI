@@ -1,4 +1,7 @@
-import { api, el, som, toast } from "/common.js";
+import { api, el, GEO, som, toast } from "/common.js";
+import { themePicker } from "/pwa.js";
+
+document.getElementById("prefs").append(themePicker({ theme: "Mavzu", auto: "Avtomatik", light: "Yorug‘", dark: "Qorong‘i" }));
 
 const app = document.getElementById("app");
 const CHANNEL = { web: "Sayt", hotel: "Mehmonxona QR", ai: "AI yordamchi" };
@@ -8,13 +11,18 @@ let days = 0, demo = true, last = "", data = null;
 const tile = (label, value) => el("div.card.tile", {}, el("b", {}, value), el("span.muted", {}, label));
 const bars = (rows, name, cols) => {
   const max = Math.max(1, ...rows.map((r) => r.unmet));
-  return el("div.scroll", {}, el("table", {}, el("thead", {}, el("tr", {}, el("th", { scope: "col" }, name), el("th", { scope: "col" }, "Javobsiz qidiruv"), cols.map(([h]) => el("th.n", { scope: "col" }, h)))),
+  return el("div.scroll", { tabindex: 0 }, el("table", {}, el("thead", {}, el("tr", {}, el("th", { scope: "col" }, name), el("th", { scope: "col" }, "Javobsiz qidiruv"), cols.map(([h]) => el("th.n", { scope: "col" }, h)))),
     el("tbody", {}, rows.map((r) => el("tr", { title: `${r.name}: ${r.searches} qidiruvdan ${r.unmet} tasi javobsiz` }, el("td", {}, r.name),
       el("td.barcell", {}, el("div.bar", {}, r.unmet > 0 && el("i", { style: `width:${(r.unmet / max) * 80}%` }), el("span", {}, String(r.unmet)))), cols.map(([, k]) => el("td.n", {}, String(r[k]))))))));
 };
 
 const LANG = { uz: "O‘zbekcha", en: "Inglizcha", ru: "Ruscha", zh: "Xitoycha", ko: "Koreyscha", ja: "Yaponcha", tr: "Turkcha", ar: "Arabcha", de: "Nemischa", fr: "Fransuzcha" };
-const simple = (name, rows) => el("div.scroll", {}, el("table", {}, el("thead", {}, el("tr", {}, el("th", { scope: "col" }, name), el("th.n", { scope: "col" }, "Qidiruv"), el("th.n", { scope: "col" }, "Javobsiz"))), el("tbody", {}, rows.map(([k, x]) => el("tr", {}, el("td", {}, k), el("td.n", {}, String(x.n)), el("td.n", {}, String(x.unmet)))))));
+const simple = (name, rows) => el("div.scroll", { tabindex: 0 }, el("table", {}, el("thead", {}, el("tr", {}, el("th", { scope: "col" }, name), el("th.n", { scope: "col" }, "Qidiruv"), el("th.n", { scope: "col" }, "Javobsiz"))), el("tbody", {}, rows.map(([k, x]) => el("tr", {}, el("td", {}, k), el("td.n", {}, String(x.n)), el("td.n", {}, String(x.unmet)))))));
+
+function tileMap(rows) {
+  const max = Math.max(1, ...rows.map((r) => r.unmet));
+  return el("ul.tilemap.geo", {}, rows.map((r) => el("li", { style: `--c:${GEO[r.region][0]};--r:${GEO[r.region][1]}` }, el("div" + (r.unmet ? "" : ".none"), { title: `${r.name}: ${r.unmet} javobsiz, ${r.listings} ta taklif`, style: r.unmet ? `background:color-mix(in srgb, var(--bar) ${Math.round(6 + (r.unmet / max) * 30)}%, var(--card))` : null }, r.name, el("b", {}, String(r.unmet))))));
+}
 
 function csv() {
   const rows = [["viloyat", "javobsiz_qidiruv", "jami_qidiruv", "taklif"], ...data.regions.map((r) => [r.name, r.unmet, r.searches, r.listings])];
@@ -43,6 +51,7 @@ async function load() {
     top && el("div.note", {}, `Eng katta bo‘shliq: ${top.name}. ${top.unmet} ta qidiruv javobsiz, hali birorta ham taklif yo‘q.`),
     el("div.tiles", {}, tile("Mezbonlar ulushi (sinov to‘lovi)", som(p.totals.host)), tile("To‘langan bronlar", String(p.totals.bookings)), tile("Mehmonlar", String(p.totals.guests)), tile("Sotuvdagi takliflar", String(p.listings))),
     p.platform && el("section.card", {}, el("h2", {}, "Biznes model (sinov to‘lovlari)"), el("dl.facts", {}, [["Bron komissiyasi", som(p.totals.platform)], ["Faol obunalar", String(p.platform.subscribers)], ["Oylik obuna daromadi", som(p.platform.mrr)], ["Jami obuna to‘lovlari", som(p.platform.subscriptions)]].map(([k, v]) => el("div", {}, el("dt", {}, k), el("dd", {}, v)))), el("p.small.muted", {}, "Faqat sinov rejimida ko‘rinadi.")),
+    el("section.card", {}, el("h2", {}, "Javobsiz qidiruvlar xaritasi"), el("p.small.muted", {}, "Sxematik xarita. Raqam: javobsiz qidiruvlar soni. To‘qroq rang: ko‘proq."), tileMap(p.regions)),
     el("section.card", {}, el("h2", {}, "Viloyatlar"), bars(p.regions, "Viloyat", [["Jami qidiruv", "searches"], ["Taklif", "listings"]])),
     el("div.two", {},
       el("section.card", {}, el("h2", {}, "Turistlar qaysi sanalarni qidirmoqda"), p.dates.length ? simple("Sana", p.dates.map((x) => [x.date, x])) : el("p.muted", {}, "Hali aniq sana bilan qidiruv yo‘q.")),
@@ -50,7 +59,7 @@ async function load() {
     el("div.two", {},
       el("section.card", {}, el("h2", {}, "Mashg‘ulot turlari"), p.categories.length ? bars(p.categories, "Mashg‘ulot", [["Jami qidiruv", "searches"]]) : el("p.muted", {}, "Bu davrda mashg‘ulot turi bo‘yicha qidiruv yo‘q.")),
       el("section.card", {}, el("h2", {}, "Savdo kanallari"),
-        p.channels.length ? el("div.scroll", {}, el("table", {}, el("thead", {}, el("tr", {}, el("th", { scope: "col" }, "Kanal"), el("th.n", { scope: "col" }, "Bron"), el("th.n", { scope: "col" }, "Aylanma"))), el("tbody", {}, p.channels.map((c) => el("tr", {}, el("td", {}, CHANNEL[c.channel]), el("td.n", {}, String(c.n)), el("td.n", {}, som(c.gmv)))))))
+        p.channels.length ? el("div.scroll", { tabindex: 0 }, el("table", {}, el("thead", {}, el("tr", {}, el("th", { scope: "col" }, "Kanal"), el("th.n", { scope: "col" }, "Bron"), el("th.n", { scope: "col" }, "Aylanma"))), el("tbody", {}, p.channels.map((c) => el("tr", {}, el("td", {}, CHANNEL[c.channel]), el("td.n", {}, String(c.n)), el("td.n", {}, som(c.gmv)))))))
           : el("p.muted", {}, "Bu davrda to‘langan bron yo‘q."),
         el("p.small.muted", {}, "GetYourGuide, Viator, Klook: ulanmagan, hamkorlik shartnomasi kerak. Tayyor eksport: ", el("a", { href: "/feeds/products.json" }, "products.json")))),
   ));

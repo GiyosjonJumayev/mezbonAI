@@ -1,4 +1,4 @@
-# SilkRoad Experience OS 2.0
+# SilkRoad Experience OS 3.0
 
 **AI-powered Tourism Business Operating System.** Every Local Experience. One Digital Platform. [O‘zbekcha](docs/README.uz.md)
 
@@ -21,10 +21,19 @@ Screenshots show made-up data. This is a working hackathon prototype: see [what 
 | **Tourism Intelligence** | Revenue, fees, conversion, busy hours, no-shows and CSV for providers. Price benchmarks, unmet demand and travel dates in the Business plan. A public panel of unmet demand by region, activity, date and language, with no personal data. |
 
 <table>
-<tr><td><img src="docs/screenshots/assistant.png" alt="AI Business Assistant with daily tasks"></td><td><img src="docs/screenshots/calendar.png" alt="Slot calendar"></td></tr>
-<tr><td><img src="docs/screenshots/analytics.png" alt="Revenue analytics"></td><td><img src="docs/screenshots/market.png" alt="Market intelligence"></td></tr>
-<tr><td><img src="docs/screenshots/booking.png" alt="Booking with QR ticket and chat"></td><td><img src="docs/screenshots/panel.png" alt="Unmet demand by region"></td></tr>
+<tr><td><img src="docs/screenshots/listing.png" alt="Listing page"></td><td><img src="docs/screenshots/assistant.png" alt="AI Business Assistant with daily tasks"></td></tr>
+<tr><td><img src="docs/screenshots/analytics.png" alt="Revenue analytics"></td><td><img src="docs/screenshots/panel.png" alt="Map of unmet demand by region"></td></tr>
+<tr><td><img src="docs/screenshots/home-m.png" alt="Home page on a phone"></td><td><img src="docs/screenshots/home-dark.png" alt="Home page in the dark theme"></td></tr>
 </table>
+
+## Design and experience
+
+- Installable app with an offline mode: a guest's ticket opens even when the server cannot be reached. Provider data is never stored on the device.
+- Push notifications for providers and guests, and a reminder within 24 hours before a visit.
+- Photo galleries (up to 6 photos, one cover). Until then each listing gets artwork generated for its craft.
+- Saved experiences, sorting, a schematic region map, similar experiences, sharing, page transitions.
+- Light, dark and automatic themes. Right to left in Arabic. Respects reduced motion.
+- Accessibility: `test/design.test.mjs` checks WCAG contrast for every text and control colour pair in both themes. Pages were checked with axe-core.
 
 ## Business model
 
@@ -89,11 +98,12 @@ src/extract.mjs    rule-based Uzbek extraction, the fallback when AI is unavaila
 src/db.mjs         SQLite schema and migrations
 src/server.mjs     HTTP API, live events, static files
 src/mcp.mjs        MCP server
+src/push.mjs       web push and reminders
 src/telegram.mjs   Telegram bot
 test/              tests for the rules, HTTP API, MCP, Telegram and migrations
 ```
 
-Four runtime dependencies: the Anthropic SDK, the MCP SDK, `zod` and `qrcode`. SQLite is built into Node.
+Five runtime dependencies: the Anthropic SDK, the MCP SDK, `zod`, `qrcode` and `web-push`. SQLite is built into Node.
 
 **Adding a language:** add it to `LANGS` and to every list in `src/i18n.mjs`. A test fails if any string is missing.
 
@@ -103,7 +113,8 @@ Four runtime dependencies: the Anthropic SDK, the MCP SDK, `zod` and `qrcode`. S
 - **GetYourGuide, Viator and Klook** are not connected. There is only a neutral export at `/feeds/products.json`.
 - **The Claude path** is tested against a stand-in server, not yet against the live API.
 - **Without a Claude key** the assistant understands a fixed set of Uzbek requests, not free conversation.
-- **Reminders** are not sent. Guests and providers see changes when they open the page; Telegram providers also get messages.
+- **Push notifications** are tested with a stand-in sender, not yet delivered through a real push service. They need HTTPS (or localhost) and the person's permission. There is no email or SMS.
+- **Listing artwork** is generated. Real photos must come from providers.
 - **Speech recognition** is the browser's own. It needs Chrome and internet, and sends audio to the browser vendor. Few devices have an Uzbek voice, so text is read with a Turkish one.
 - **Telegram** voice notes are not transcribed, and the bot has not been run against the live Telegram service.
 - **Translations** have not been reviewed by native speakers.
@@ -112,7 +123,7 @@ Four runtime dependencies: the Anthropic SDK, the MCP SDK, `zod` and `qrcode`. S
 - **Sign-in** for providers is a secret link, one per business. There are no staff accounts, SMS check or recovery.
 - **Guide certificates** are asked for but not checked against a registry.
 - **The panel** is public. It shows totals only.
-- **HTTPS** is not included. Put a reverse proxy in front before going online.
+- **HTTPS** is not included. Put a reverse proxy in front before going online and set `TRUST_PROXY=1`, so rate limits see real visitor addresses.
 
 ## Credits
 

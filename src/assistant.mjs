@@ -65,7 +65,7 @@ export function readAmount(text) {
 /** How ready a listing is to sell, with the next improvements. Only things the provider controls. */
 export function quality(l) {
   const checks = [
-    [25, Boolean(l.photo), "Haqiqiy rasm qo‘shing"],
+    [25, l.photos.length >= 3, l.photos.length ? "Kamida 3 ta rasm qo‘ying" : "Haqiqiy rasm qo‘shing"],
     [20, (l.i18n.uz?.description ?? "").length >= 120, "Tavsifni kengaytiring: mehmon nima qiladi, nimani olib ketadi"],
     [15, l.engine === "claude" || l.edited.length > 0, "Shablon matnni o‘z so‘zlaringiz bilan tahrirlang"],
     [10, Boolean(l.place), "Aniq joyni yozing"],

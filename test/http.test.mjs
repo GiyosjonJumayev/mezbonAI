@@ -38,12 +38,21 @@ test("repeating a search counts as one signal of demand", async () => {
   assert.equal(db.prepare("SELECT COUNT(*) n FROM searches WHERE region='sirdaryo'").get().n, 1);
 });
 
-test("a replaced or deleted photo is removed from disk", async () => {
+test("photo gallery: add, choose the cover, remove, and clean up files", async () => {
   const h = a.core.createHost("Foto"), l = await a.core.createDraft(h.key, "kulolman"), head = { "X-Host-Key": h.key };
-  const up = async (tail) => (await (await a.post(`/api/host/listings/${l.id}/photo`, { data: Buffer.from([0xff, 0xd8, 0xff, tail]).toString("base64") }, head)).json()).photo;
+  const send = async (tail) => a.post(`/api/host/listings/${l.id}/photo`, { data: Buffer.from([0xff, 0xd8, 0xff, tail]).toString("base64") }, head);
+  const up = async (tail) => (await (await send(tail)).json()).photos.at(-1);
+  const act = async (what, file, h2 = head) => a.post(`/api/host/listings/${l.id}/photo-${what}`, { file }, h2);
   const code = async (f) => (await fetch(`${a.base}/photos/${f}`)).status;
   const first = await up(1), second = await up(2);
-  assert.deepEqual([await code(first), await code(second)], [404, 200]);
+  assert.deepEqual([await code(first), await code(second)], [200, 200]);
+  assert.equal((await (await act("cover", second)).json()).photo, second);
+  assert.equal((await act("remove", first, { "X-Host-Key": a.core.createHost("Boshqa").key })).status, 404);
+  assert.equal((await act("remove", "../../mezbon.db")).status, 404);
+  assert.deepEqual((await (await act("remove", first)).json()).photos, [second]);
+  assert.equal(await code(first), 404);
+  for (let i = 0; i < 5; i++) assert.equal((await send(i)).status, 200);
+  assert.equal((await send(9)).status, 409);
   await a.post(`/api/host/listings/${l.id}/delete`, {}, head);
   assert.equal(await code(second), 404);
 });

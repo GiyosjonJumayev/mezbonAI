@@ -6,17 +6,18 @@ import path from "node:path";
 import { pathToFileURL } from "node:url";
 import QRCode from "qrcode";
 import { openDb, ROOT, DATA_DIR } from "./db.mjs";
-import { AppError, CANCEL_HOURS, createCore, HOTEL_FEE } from "./core.mjs";
+import { AppError, CANCEL_HOURS, createCore, HOTEL_FEE, MAX_PHOTOS } from "./core.mjs";
 import { CATEGORIES, LANGS, LANG_NAMES, PHRASES, PROVIDER_TYPES, REGIONS, REGION_NAMES, UI } from "./i18n.mjs";
 import { PLANS } from "./business.mjs";
 import { aiEnabled } from "./ai.mjs";
 import { seed } from "./seed.mjs";
 import { bookingNotice, telegramSender } from "./telegram.mjs";
+import { createPush } from "./push.mjs";
 
 const PUBLIC = path.join(ROOT, "public");
 const PHOTOS = path.join(DATA_DIR, "photos");
 const PAGES = { "/": "index.html", "/mezbon": "host.html", "/panel": "panel.html", "/qr": "qr.html" };
-const TYPES = { ".html": "text/html; charset=utf-8", ".js": "text/javascript; charset=utf-8", ".css": "text/css; charset=utf-8", ".svg": "image/svg+xml", ".jpg": "image/jpeg", ".png": "image/png", ".webp": "image/webp", ".woff2": "font/woff2" };
+const TYPES = { ".html": "text/html; charset=utf-8", ".js": "text/javascript; charset=utf-8", ".css": "text/css; charset=utf-8", ".svg": "image/svg+xml", ".jpg": "image/jpeg", ".png": "image/png", ".webp": "image/webp", ".woff2": "font/woff2", ".webmanifest": "application/manifest+json" };
 const CSP = "default-src 'self'; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'";
 
 async function readJson(req, limit) {
@@ -64,16 +65,29 @@ const env = {
   testPayments: process.env.NODE_ENV !== "production" || process.env.ALLOW_TEST_PAYMENTS === "1",
 };
 
-export function createApp(db, { telegram = env.telegram, testPayments = env.testPayments } = {}) {
+const uzDate = (d) => d.split("-").reverse().join(".");
+/** What a provider reads on the lock screen. */
+function hostNotice(b, type) {
+  const who = `${b.guest_name}, ${b.guests} kishi, ${uzDate(b.date)}, ${b.time}`;
+  if (type === "booking") return ["Yangi bron", who];
+  if (type === "moved") return ["Mehmon vaqtni o‘zgartirdi", who];
+  if (type === "cancelled") return ["Bron bekor qilindi", who];
+  return [`Xabar: ${b.guest_name}`, b.messages.findLast((m) => m.sender === "guest")?.translated ?? ""];
+}
+
+export function createApp(db, { telegram = env.telegram, testPayments = env.testPayments, pushSend, trustProxy = process.env.TRUST_PROXY === "1" } = {}) {
   const streams = new Map(); // host id → Set of open event streams
   const notify = (hostId, ev) => {
     for (const r of streams.get(hostId) ?? []) r.write(`data: ${JSON.stringify(ev)}\n\n`);
-    const h = telegram && db.prepare("SELECT key, telegram_chat FROM hosts WHERE id=?").get(hostId);
-    if (!h?.telegram_chat) return;
-    const b = core.hostHome(h.key).bookings.find((x) => x.id === ev.id);
-    if (b) Promise.resolve(telegram(h.telegram_chat, ...bookingNotice(b, ev.type))).catch(() => console.error("Telegram xabari yuborilmadi"));
+    const h = db.prepare("SELECT key, telegram_chat FROM hosts WHERE id=?").get(hostId);
+    const b = h && core.hostHome(h.key).bookings.find((x) => x.id === ev.id);
+    if (!b) return;
+    push.toHost(hostId, ...hostNotice(b, ev.type), "/mezbon#bronlar");
+    if (telegram && h.telegram_chat) Promise.resolve(telegram(h.telegram_chat, ...bookingNotice(b, ev.type))).catch(() => console.error("Telegram xabari yuborilmadi"));
   };
-  const core = createCore(db, { notify });
+  const push = createPush(db, { send: pushSend, fail: (s, m) => new AppError(s, m) });
+  const core = createCore(db, { notify, notifyGuest: (b, type, text) => push.toGuest(b, type, text) });
+  const remind = () => Promise.all(core.takeReminders().flatMap((b) => [push.toGuest(b, "reminder"), push.toHost(b.host_id, "Yaqin tashrif", `${b.guest_name}, ${b.guests} kishi, ${uzDate(b.date)}, ${b.time}`, "/mezbon#yordamchi")]));
   const limitAi = limiter(20, 60e3), limitWrite = limiter(90, 60e3), limitSignup = limiter(10, 10 * 60e3), limitTicket = limiter(60, 60e3);
   const newSearch = counter(1, 10 * 60e3); // one visitor repeating a search is one signal of demand
   const newView = counter(1, 30 * 60e3);
@@ -81,7 +95,7 @@ export function createApp(db, { telegram = env.telegram, testPayments = env.test
 
   const api = {
     "GET /healthz": () => ({ ok: true }),
-    "GET /api/config": () => ({ langs: LANGS, langNames: LANG_NAMES, regions: REGIONS, regionNames: REGION_NAMES, categories: CATEGORIES, ui: UI, phrases: PHRASES, providerTypes: PROVIDER_TYPES, plans: PLANS, hotelFee: HOTEL_FEE, cancelHours: CANCEL_HOURS, ai: aiEnabled(), testPayments, usdRate: Number(process.env.USD_RATE) || null }),
+    "GET /api/config": () => ({ langs: LANGS, langNames: LANG_NAMES, regions: REGIONS, regionNames: REGION_NAMES, categories: CATEGORIES, ui: UI, phrases: PHRASES, providerTypes: PROVIDER_TYPES, plans: PLANS, hotelFee: HOTEL_FEE, cancelHours: CANCEL_HOURS, maxPhotos: MAX_PHOTOS, ai: aiEnabled(), testPayments, usdRate: Number(process.env.USD_RATE) || null }),
     "GET /api/listings": ({ q, ip }) => {
       const f = { region: q.get("region"), category: q.get("category"), date: q.get("date"), guests: Number(q.get("guests")), lang: q.get("lang"), source: q.get("source") === "ai" ? "ai" : "web" };
       return core.search({ ...f, log: newSearch([ip, f.source, f.region, f.category].join("|")) });
@@ -110,7 +124,7 @@ export function createApp(db, { telegram = env.telegram, testPayments = env.test
     "POST /api/host/listings/:id": ({ key, id, body }) => core.updateListing(key, id, body),
     "POST /api/host/listings/:id/publish": ({ key, id }) => core.publish(key, id),
     "POST /api/host/listings/:id/pause": ({ key, id }) => core.pause(key, id),
-    "POST /api/host/listings/:id/delete": async ({ key, id }) => { await dropPhoto(core.deleteDraft(key, id).photo); return { ok: true }; },
+    "POST /api/host/listings/:id/delete": async ({ key, id }) => { await Promise.all(core.deleteDraft(key, id).photos.map(dropPhoto)); return { ok: true }; },
     "POST /api/host/listings/:id/photo": async ({ key, id, body }) => {
       core.authHost(key);
       const buf = Buffer.from(String(body.data ?? ""), "base64");
@@ -118,12 +132,13 @@ export function createApp(db, { telegram = env.telegram, testPayments = env.test
       if (!ext) throw new AppError(400, "Faqat JPG, PNG yoki WebP rasm");
       const name = randomBytes(8).toString("hex") + ext;
       await writeFile(path.join(PHOTOS, name), buf);
-      try {
-        const { listing, old } = core.setPhoto(key, id, name);
-        await dropPhoto(old);
-        return listing;
-      } catch (e) { await dropPhoto(name); throw e; }
+      try { return core.addPhoto(key, id, name); } catch (e) { await dropPhoto(name); throw e; }
     },
+    "POST /api/host/listings/:id/photo-remove": async ({ key, id, body }) => { const l = core.removePhoto(key, id, body.file); await dropPhoto(body.file); return l; },
+    "POST /api/host/listings/:id/photo-cover": ({ key, id, body }) => core.coverPhoto(key, id, body.file),
+    "GET /api/push/key": () => ({ key: push.publicKey }),
+    "POST /api/push/host": ({ key, body }) => push[body.off ? "unsubscribe" : "subscribe"]("host", core.authHost(key).id, body.off ?? body.subscription),
+    "POST /api/push/guest/:id": ({ id, body }) => push[body.off ? "unsubscribe" : "subscribe"]("guest", core.bookingId(id), body.off ?? body.subscription),
     "POST /api/host/bookings/:id/accept": ({ key, id }) => core.decide(key, id, true),
     "POST /api/host/bookings/:id/decline": ({ key, id }) => core.decide(key, id, false),
     "POST /api/host/bookings/:id/messages": ({ key, id, body, ip }) => { limitAi(ip); return core.message("host", key, { ...body, booking_id: id }); },
@@ -163,7 +178,8 @@ export function createApp(db, { telegram = env.telegram, testPayments = env.test
     };
     try {
       const url = new URL(req.url, "http://x");
-      const ip = req.socket.remoteAddress;
+      // Behind a reverse proxy the last hop it added is the only address we can believe.
+      const ip = (trustProxy && req.headers["x-forwarded-for"]?.split(",").at(-1).trim()) || req.socket.remoteAddress;
       const key = req.headers["x-host-key"];
 
       if (url.pathname === "/api/host/events" && req.method === "GET") {
@@ -198,7 +214,7 @@ export function createApp(db, { telegram = env.telegram, testPayments = env.test
           let body = {};
           if (req.method === "POST") {
             limitWrite(ip);
-            body = await readJson(req, url.pathname.endsWith("/photo") ? 3e6 : 20e3);
+            body = await readJson(req, url.pathname.endsWith("/photo") ? 4e6 : 20e3);
           }
           return json(200, await r.fn({ id: m[1], q: url.searchParams, body, key, ip }));
         }
@@ -209,7 +225,7 @@ export function createApp(db, { telegram = env.telegram, testPayments = env.test
       if (Object.hasOwn(PAGES, url.pathname)) file = path.join(PUBLIC, PAGES[url.pathname]);
       else if (/^\/photos\/[a-f0-9]{16}\.(jpg|png|webp)$/.test(url.pathname)) { file = path.join(PHOTOS, path.basename(url.pathname)); cache = "public, max-age=31536000, immutable"; }
       else if (/^\/fonts\/[a-z-]+\.woff2$/.test(url.pathname)) { file = path.join(PUBLIC, "fonts", path.basename(url.pathname)); cache = "public, max-age=31536000, immutable"; }
-      else if (/^\/[a-z]+\.(js|css|svg)$/.test(url.pathname)) file = path.join(PUBLIC, path.basename(url.pathname));
+      else if (/^\/[a-z0-9]+\.(js|css|svg|png|webmanifest)$/.test(url.pathname)) file = path.join(PUBLIC, path.basename(url.pathname));
       else throw new AppError(404, "Sahifa topilmadi", "notfound");
       const data = await readFile(file).catch(() => { throw new AppError(404, "Fayl topilmadi", "notfound"); });
       res.writeHead(200, { "Content-Type": TYPES[path.extname(file)], "Cache-Control": cache });
@@ -221,12 +237,12 @@ export function createApp(db, { telegram = env.telegram, testPayments = env.test
       else res.end();
     }
   });
-  return { server, core };
+  return { server, core, push, remind };
 }
 
 if (import.meta.url === pathToFileURL(process.argv[1] ?? "").href) {
   const db = openDb();
-  const { server, core } = createApp(db);
+  const { server, core, remind } = createApp(db);
   if (process.env.SEED !== "0") seed(db, core);
   const port = Number(process.env.PORT) || 4321, host = process.env.HOST || "127.0.0.1";
   server.on("error", (e) => {
@@ -237,6 +253,9 @@ if (import.meta.url === pathToFileURL(process.argv[1] ?? "").href) {
     console.log(`SilkRoad Experience OS: http://localhost:${port}   (AI: ${aiEnabled() ? "Claude" : "demo rejim"})`);
     if (host === "0.0.0.0") for (const i of Object.values(os.networkInterfaces()).flat()) if (i.family === "IPv4" && !i.internal) console.log(`Telefon uchun:  http://${i.address}:${port}`);
   });
+  const tick = () => remind().catch((e) => console.error("[reminders]", e.message));
+  setInterval(tick, 5 * 60e3).unref();
+  tick();
   for (const s of ["SIGINT", "SIGTERM"]) process.on(s, () => {
     server.closeAllConnections();
     server.close(() => { db.close(); process.exit(0); });

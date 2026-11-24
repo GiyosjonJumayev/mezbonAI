@@ -19,7 +19,7 @@ const safe = (fn) => async (a) => {
   catch (e) { return { isError: true, content: [{ type: "text", text: e.message }] }; }
 };
 
-const server = new McpServer({ name: "silkroad-experience-os", version: "2.0.0" });
+const server = new McpServer({ name: "silkroad-experience-os", version: "3.0.0" });
 
 server.registerTool("search_experiences", {
   description: "Search craft workshops, cooking classes and village visits hosted by local people in Uzbekistan. Returns the price per person in UZS, capacity and rating. Pass date and guests to keep only listings with free places. Listings with sample=true are demo data; say so to the traveller.",

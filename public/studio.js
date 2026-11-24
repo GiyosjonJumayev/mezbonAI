@@ -11,7 +11,7 @@ const STATUS = { confirmed: "Tasdiqlangan", paid: "Javob kutilmoqda", declined: 
 const pct = (x) => (x == null ? "—" : `${Math.round(x * 100)}%`);
 const card = (title, ...kids) => el("section.card", {}, el("h2", {}, title), ...kids);
 const tiles = (list) => el("div.tiles", {}, list.map(([k, v, sub]) => el("div.card.tile", {}, el("b", {}, v), el("span.muted", {}, k), sub && el("span.small.muted", {}, sub))));
-const table = (head, rows) => el("div.scroll", {}, el("table", {}, el("thead", {}, el("tr", {}, head.map(([h, n]) => el(n ? "th.n" : "th", { scope: "col" }, h)))), el("tbody", {}, rows.map((r) => el("tr", {}, r.map((c, i) => el(head[i][1] ? "td.n" : "td", {}, c)))))));
+const table = (head, rows) => el("div.scroll", { tabindex: 0 }, el("table", {}, el("thead", {}, el("tr", {}, head.map(([h, n]) => el(n ? "th.n" : "th", { scope: "col" }, h)))), el("tbody", {}, rows.map((r) => el("tr", {}, r.map((c, i) => el(head[i][1] ? "td.n" : "td", {}, c)))))));
 const lock = (text) => el("div.card.empty", {}, plate("qulf", "metal"), el("p", {}, text), el("a.btn.primary", { href: "#tarif" }, "Tariflarni ko‘rish"));
 
 /** A view that loads its own data; it shows errors in place and ignores answers that arrive after it was replaced. */
@@ -40,7 +40,7 @@ export function calendar({ key, home }) {
     const c = await api(`/api/host/listings/${lid}/calendar?days=14${from ? `&from=${from}` : ""}`, null, key);
     const set = (d, s, capacity) => act(async () => { await api(`/api/host/listings/${lid}/slot`, { date: d.date, time: s.time, capacity }, key); await refresh(); });
     return [c.status === "paused" && el("div.note.warn", {}, "Bu taklif to‘xtatilgan, yangi bron qabul qilinmaydi."),
-      el("div.cal", {}, c.days.map((d) => el("section.day" + (d.open ? "" : ".off"), { "aria-label": day(d.date) }, el("h3", {}, `${weekday(d.date)}, ${day(d.date)}`),
+      el("div.cal", {}, c.days.map((d) => el("section.day" + (d.open ? "" : ".off"), { "aria-label": day(d.date) }, el("h2.sm", {}, `${weekday(d.date)}, ${day(d.date)}`),
         d.open ? d.slots.map((s) => {
           const full = s.booked >= s.capacity, over = s.booked > s.capacity;
           return el("div.slot" + (s.capacity === 0 ? ".shut" : ""), {}, el("div.row.between", {}, el("b", {}, s.time), el("span.badge" + (over ? ".bad" : s.capacity === 0 ? "" : full ? ".warn" : ".ok"), {}, s.capacity === 0 ? "Yopiq" : `${s.booked} / ${s.capacity}`)),
@@ -112,7 +112,7 @@ function columns(series, bucket) {
 function busyTable(rows) {
   if (!rows.length) return el("p.muted", {}, "Bu davrda ma’lumot yo‘q.");
   const times = [...new Set(rows.map((r) => r.time))].sort(), max = Math.max(...rows.map((r) => r.guests)), at = new Map(rows.map((r) => [`${r.weekday}|${r.time}`, r.guests]));
-  return el("div.scroll", {}, el("table.heat", {}, el("thead", {}, el("tr", {}, el("th", { scope: "col" }, "Vaqt"), [1, 2, 3, 4, 5, 6, 7].map((d) => el("th.n", { scope: "col" }, WEEK[d % 7])))),
+  return el("div.scroll", { tabindex: 0 }, el("table.heat", {}, el("thead", {}, el("tr", {}, el("th", { scope: "col" }, "Vaqt"), [1, 2, 3, 4, 5, 6, 7].map((d) => el("th.n", { scope: "col" }, WEEK[d % 7])))),
     el("tbody", {}, times.map((tm) => el("tr", {}, el("td", {}, tm), [1, 2, 3, 4, 5, 6, 7].map((d) => { const n = at.get(`${d}|${tm}`) ?? 0; return el("td.n", { style: n ? `background:color-mix(in srgb, var(--bar) ${Math.round(8 + (n / max) * 32)}%, var(--card))` : null, title: `${WEEK[d % 7]}, ${tm}: ${n} mehmon` }, n ? String(n) : "·"); }))))));
 }
 
@@ -132,7 +132,7 @@ export function analytics({ key, cfg }) {
       link.remove();
       setTimeout(() => URL.revokeObjectURL(link.href), 1000);
     };
-    const share = (rows, name, label) => card(label, rows.length ? table([["", 0], ["Bron", 1], ["Daromad", 1]], rows.map((r) => [name(r.key), String(r.bookings), som(r.earned)])) : el("p.muted", {}, "Bu davrda ma’lumot yo‘q."));
+    const share = (rows, name, label) => card(label, rows.length ? table([["Nomi", 0], ["Bron", 1], ["Daromad", 1]], rows.map((r) => [name(r.key), String(r.bookings), som(r.earned)])) : el("p.muted", {}, "Bu davrda ma’lumot yo‘q."));
     return [
       el("div.row.between", {}, el("div.chips", { role: "group", "aria-label": "Davr" }, a.available.map((d) => el("button", { "aria-pressed": String(d === a.days), onclick: () => { if (!a.unlocked.includes(d)) { location.hash = "tarif"; return toast("Uzoqroq davr Pro tarifida ochiladi"); } days = d; refresh(); } }, d === 365 ? "1 yil" : `${d} kun`, !a.unlocked.includes(d) && el("span.small", {}, " Pro")))),
         a.detail && el("button", { onclick: download }, "CSV yuklash")),
@@ -154,7 +154,7 @@ export function market({ key, home, cfg }) {
   if (!home.plan.intelligence) return lock("Bozor tahlili: narxlar taqqosi, javobsiz talab, hududlar trendi va tavsiyalar. Business tarifida ochiladi.");
   return live(async () => {
     const m = await api("/api/host/intelligence", null, key);
-    const gap = (rows) => (rows.length ? table([["", 0], ["Javobsiz", 1], ["Jami", 1], ["Namuna", 1]], rows.map((r) => [r.name, String(r.unmet), String(r.searches), String(r.sample)])) : el("p.muted", {}, "Hali qidiruv yo‘q."));
+    const gap = (rows) => (rows.length ? table([["Nomi", 0], ["Javobsiz", 1], ["Jami", 1], ["Namuna", 1]], rows.map((r) => [r.name, String(r.unmet), String(r.searches), String(r.sample)])) : el("p.muted", {}, "Hali qidiruv yo‘q."));
     const dates = m.dates.length ? table([["Sana", 0], ["Qidiruv", 1], ["Javobsiz", 1]], m.dates.map((x) => [`${day(x.date)}, ${weekday(x.date)}`, String(x.n), String(x.unmet)])) : el("p.muted", {}, "Turistlar hali aniq sana bilan qidirmagan.");
     return [
       m.sampleSearches > 0 && el("div.note.warn", {}, `Diqqat: ${m.sampleSearches} ta qidiruv namuna ma’lumot. “Namuna” ustuniga qarang.`),

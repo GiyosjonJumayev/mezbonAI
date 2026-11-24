@@ -142,9 +142,9 @@ test("today's visits show who has arrived", async () => {
 });
 
 test("readiness score adds up to 100 and explains the next step", () => {
-  const full = { photo: "x", i18n: { uz: { description: "a".repeat(120) } }, engine: "claude", edited: [], place: "Rishton", times: ["10:00", "15:00"], weekdays: [1, 2, 3, 4, 5], reviews: 1 };
+  const full = { photos: ["a", "b", "c"], i18n: { uz: { description: "a".repeat(120) } }, engine: "claude", edited: [], place: "Rishton", times: ["10:00", "15:00"], weekdays: [1, 2, 3, 4, 5], reviews: 1 };
   assert.deepEqual(quality(full), { score: 100, next: [] });
-  const bare = quality({ ...full, photo: null, i18n: { uz: { description: "" } }, engine: "demo", place: null, times: ["10:00"], weekdays: [1], reviews: 0 });
+  const bare = quality({ ...full, photos: [], i18n: { uz: { description: "" } }, engine: "demo", place: null, times: ["10:00"], weekdays: [1], reviews: 0 });
   assert.deepEqual([bare.score, bare.next.length], [0, 7]);
 });
 
