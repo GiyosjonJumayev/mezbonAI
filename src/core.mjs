@@ -4,6 +4,7 @@ import { CATEGORIES, LANGS, PROVIDER_TYPES, REGIONS } from "./i18n.mjs";
 import { missing, templateI18n } from "./extract.mjs";
 import { buildListing, translate } from "./ai.mjs";
 import { createBusiness, effectivePlan, newTicketCode, PLANS } from "./business.mjs";
+import { createAssistant } from "./assistant.mjs";
 
 /** `message` is Uzbek for hosts; `code` lets the tourist site and AI assistants show their own wording. */
 export class AppError extends Error {
@@ -136,7 +137,7 @@ export function createCore(db, { notify = () => {} } = {}) {
 
     hostHome(key) {
       const h = authHost(key);
-      const rows = all(`SELECT b.id, b.date, b.time, b.guests, b.guest_name, b.lang, b.channel, b.status, b.host_uzs, b.total_uzs, b.created_at, b.checked_in_at, l.i18n, l.id listing_id
+      const rows = all(`SELECT b.id, b.date, b.time, b.guests, b.guest_name, b.lang, b.channel, b.status, b.host_uzs, b.total_uzs, b.created_at, b.checked_in_at, b.moved_at, l.i18n, l.id listing_id
         FROM bookings b JOIN listings l ON l.id=b.listing_id WHERE l.host_id=? AND b.status!='pending' AND NOT (b.status='cancelled' AND b.expires_at IS NOT NULL)
         ORDER BY b.status='paid' DESC, b.date, b.time LIMIT 100`, h.id);
       const sums = one(`SELECT COALESCE(SUM(CASE WHEN b.status='confirmed' THEN b.host_uzs END),0) earned, COALESCE(SUM(CASE WHEN b.status='confirmed' THEN b.guests END),0) guests, COUNT(CASE WHEN b.status='paid' THEN 1 END) waiting
@@ -235,7 +236,7 @@ export function createCore(db, { notify = () => {} } = {}) {
       let rows = all(`${LISTING} WHERE l.status='published' AND (? IS NULL OR l.region=?) AND (? IS NULL OR l.category=?) AND l.capacity >= ? ORDER BY l.published_at DESC`, r, r, c, c, n).map(full);
       if (isDate(date)) rows = rows.filter((l) => slots(l, date, 1).some((d) => d.times.some((t) => t.free >= n)));
       // Only a search that names a region or an activity says something about demand.
-      if (log && (r || c)) run("INSERT INTO searches (region,category,results,lang,source,created_at) VALUES (?,?,?,?,?,?)", r, c, rows.length, lang(lg), source, now());
+      if (log && (r || c)) run("INSERT INTO searches (region,category,results,lang,source,created_at,for_date,guests) VALUES (?,?,?,?,?,?,?,?)", r, c, rows.length, lang(lg), source, now(), isDate(date) ? date : null, n > 1 ? n : null);
       return rows.map(publicListing);
     },
     listing(lid) {
@@ -288,7 +289,7 @@ export function createCore(db, { notify = () => {} } = {}) {
         status: isExpired(b) ? "expired" : b.status, expires_at: b.status === "pending" ? b.expires_at : null,
         total_uzs: b.total_uzs, platform_uzs: b.platform_uzs, hotel_uzs: b.hotel_uzs, host_uzs: b.host_uzs,
         ticket: b.status === "confirmed" ? { code: b.ticket_code, used_at: b.checked_in_at } : null,
-        can_cancel: canCancel(b), can_review: canReview(b), my_rating: b.review_rating, messages: msgs(b.id),
+        can_cancel: canCancel(b), can_move: b.status !== "pending" && canCancel(b), can_review: canReview(b), my_rating: b.review_rating, messages: msgs(b.id),
       };
     },
 
@@ -307,6 +308,28 @@ export function createCore(db, { notify = () => {} } = {}) {
       if (!canCancel(b)) throw new AppError(409, "Bekor qilish muddati o‘tgan", "cancel");
       const r = run("UPDATE bookings SET status='cancelled' WHERE id=? AND status=?", b.id, b.status);
       if (r.changes && b.status !== "pending") notify(b.host_id, { type: "cancelled", id: b.id });
+      return core.guestBooking(token);
+    },
+
+    /** Moves a paid or confirmed booking to another open slot at the same price. The provider approves it again and a new ticket is issued. */
+    reschedule(token, p) {
+      const b = guestOwn(token), date = p.date, time = String(p.time ?? "");
+      if (b.status === "pending" || !canCancel(b)) throw new AppError(409, "Ko‘chirish muddati o‘tgan", "cancel");
+      if (!isDate(date)) throw bad("Sana noto‘g‘ri");
+      if (date === b.date && time === b.time) throw bad("Boshqa vaqtni tanlang");
+      if (`${date}T${time}` <= tashkentNow().slice(0, 16)) throw new AppError(400, "Bu vaqt o‘tib ketgan", "past");
+      if (date > addDays(tashkentNow().slice(0, 10), 365)) throw bad("Sana bir yildan uzoq");
+      const l = published(b.listing_id);
+      if (!openOn(l, date) || !l.times.includes(time)) throw new AppError(409, "Mezbon bu vaqtda ishlamaydi", "closed");
+      db.exec("BEGIN IMMEDIATE");
+      try {
+        const free = slots(l, date, 1)[0]?.times.find((t) => t.time === time)?.free ?? 0;
+        if (free < b.guests) throw new AppError(409, "Bu vaqtda joy yetarli emas", "full");
+        const r = run("UPDATE bookings SET date=?, time=?, status='paid', ticket_code=NULL, moved_at=? WHERE id=? AND status=? AND checked_in_at IS NULL", date, time, now(), b.id, b.status);
+        if (!r.changes) throw new AppError(409, "Bron holati o‘zgargan", "state");
+        db.exec("COMMIT");
+      } catch (e) { db.exec("ROLLBACK"); throw e; }
+      notify(b.host_id, { type: "moved", id: b.id });
       return core.guestBooking(token);
     },
 
@@ -370,6 +393,8 @@ export function createCore(db, { notify = () => {} } = {}) {
         regions: Object.keys(REGIONS).map((k) => ({ region: k, name: REGIONS[k], listings: supply[k] ?? 0, searches: byRegion[k]?.n ?? 0, unmet: byRegion[k]?.unmet ?? 0 })).sort(rank),
         categories: Object.keys(CATEGORIES).map((k) => ({ category: k, name: CATEGORIES[k].uz, searches: byCategory[k]?.n ?? 0, unmet: byCategory[k]?.unmet ?? 0 })).filter((x) => x.searches).sort(rank),
         platform: biz.platform(),
+        dates: all(`SELECT for_date date, COUNT(*) n, SUM(results=0) unmet FROM searches WHERE for_date >= ? AND created_at >= ? ${noDemo} GROUP BY for_date ORDER BY n DESC, for_date LIMIT 10`, tashkentNow().slice(0, 10), since),
+        languages: all(`SELECT lang, COUNT(*) n, SUM(results=0) unmet FROM searches WHERE demo=0 AND created_at >= ? GROUP BY lang ORDER BY n DESC LIMIT 10`, since),
         demoSearches: demo ? one("SELECT COUNT(*) n FROM searches WHERE demo=1 AND created_at >= ?", since).n : 0,
       };
     },
@@ -385,5 +410,7 @@ export function createCore(db, { notify = () => {} } = {}) {
     }),
   };
   for (const k of Object.keys(biz)) if (core[k] !== biz[k]) throw new Error(`Two core functions are named ${k}`);
-  return core;
+  const helper = createAssistant({ core, one, run, today: () => tashkentNow().slice(0, 10), tashkentNow, addDays, isDate, fail: (s, m, c) => new AppError(s, m, c) });
+  for (const k of Object.keys(helper)) if (k in core) throw new Error(`Two core functions are named ${k}`);
+  return Object.assign(core, helper);
 }

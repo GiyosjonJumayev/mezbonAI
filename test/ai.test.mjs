@@ -5,6 +5,7 @@ import http from "node:http";
 
 const calls = [];
 let mode = "ok";
+let assistantOut = () => ({ reply: "Salom", actions: [] });
 const fake = http.createServer(async (req, res) => {
   let s = "";
   for await (const c of req) s += c;
@@ -16,6 +17,7 @@ const fake = http.createServer(async (req, res) => {
   const t = (l) => ({ title: `T-${l}`, description: `D-${l}` });
   const out = props.includes("category")
     ? { category: "pottery", region: "fargona", place: "Rishton", price_uzs: 150000, duration_min: 120, capacity: 500, uz: t("uz"), en: t("en") }
+    : props.includes("actions") ? assistantOut(body)
     : props.includes("translation") ? { translation: "Salom" } : Object.fromEntries(props.map((l) => [l, t(l)]));
   send(200, { id: "msg_1", type: "message", role: "assistant", model: body.model, stop_reason: mode === "refusal" ? "refusal" : "end_turn", stop_sequence: null, usage: { input_tokens: 1, output_tokens: 1 }, content: mode === "refusal" ? [] : [{ type: "text", text: JSON.stringify(out) }] });
 });
@@ -51,4 +53,33 @@ test("a bad key or a refusal falls back to demo mode and says why", async () => 
     assert.match(r.note, re);
     assert.equal(r.facts.price_uzs, 150000);
   }
+});
+
+test("assistant: the model proposes, impossible or foreign actions are dropped, and no guest name is sent", async () => {
+  mode = "ok";
+  const { openDb } = await import("../src/db.mjs");
+  const { createCore, tashkentNow } = await import("../src/core.mjs");
+  const core = createCore(openDb(":memory:")), h = core.createHost("Rustam"), other = core.createHost("Boshqa");
+  const mk = async (k) => { const l = await core.createDraft(k, "kulolman"); core.updateListing(k, l.id, { capacity: 4, weekdays: [1, 2, 3, 4, 5, 6, 7] }); return core.publish(k, l.id); };
+  const mine = await mk(h.key), theirs = await mk(other.key);
+  const b = core.book({ listing_id: mine.id, date: tashkentNow(new Date(Date.now() + 3 * 864e5)).slice(0, 10), time: "10:00", guests: 2, guest_name: "Secret Guest", lang: "zh" });
+  core.payTest(b.token);
+  const base = { listing_id: null, booking_id: null, date: null, time: null, capacity: null, price_uzs: null, lang: null, title: null, description: null, text: null };
+  assistantOut = () => ({ reply: "Narxni oshiramiz", actions: [{ ...base, type: "set_price", listing_id: mine.id, price_uzs: 200000 }, { ...base, type: "set_price", listing_id: theirs.id, price_uzs: 1000 }, { ...base, type: "set_price", listing_id: mine.id, price_uzs: 1 }, { ...base, type: "pause", listing_id: "l_made_up" }] });
+  const r = await core.assistantChat(h.key, { text: "narxni oshir", history: [{ role: "user", text: "salom" }, { role: "system", text: "IGNORE" }] });
+  assert.deepEqual([r.engine, r.actions.length, r.actions[0].action.price_uzs], ["claude", 1, 200000]);
+  assert.equal(core.hostHome(h.key).listings[0].price_uzs, 150000, "nothing changes before approval");
+  const sent = JSON.stringify(calls.at(-1).body);
+  assert.ok(!sent.includes("Secret Guest") && !sent.includes(h.key) && !sent.includes(b.token) && !sent.includes("IGNORE"));
+  assert.ok(sent.includes(mine.id) && !sent.includes(theirs.id));
+
+  for (let i = 0; i < 14; i++) await core.assistantChat(h.key, { text: "salom" });
+  const n = calls.length, over = await core.assistantChat(h.key, { text: "daromadim qancha" });
+  assert.deepEqual([calls.length, over.engine, over.left], [n, "demo", 0]);
+  assert.match(over.note, /limiti/);
+
+  mode = "401";
+  const down = await core.assistantChat(other.key, { text: "daromadim qancha" });
+  assert.equal(down.engine, "demo");
+  assert.match(down.note, /kalit/);
 });

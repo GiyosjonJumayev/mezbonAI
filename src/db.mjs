@@ -78,6 +78,12 @@ const MIGRATIONS = [
      id TEXT PRIMARY KEY, host_id TEXT NOT NULL REFERENCES hosts(id), plan TEXT NOT NULL, kind TEXT NOT NULL,
      credit_uzs INTEGER NOT NULL, amount_uzs INTEGER NOT NULL, until TEXT NOT NULL, created_at TEXT NOT NULL);
    CREATE INDEX invoices_host ON invoices(host_id);`,
+
+  // v4: assistant limits, travel dates in searches, guest reschedules
+  `CREATE TABLE assistant_usage (host_id TEXT NOT NULL REFERENCES hosts(id), day TEXT NOT NULL, n INTEGER NOT NULL, PRIMARY KEY (host_id, day));
+   ALTER TABLE searches ADD COLUMN for_date TEXT;
+   ALTER TABLE searches ADD COLUMN guests INTEGER;
+   ALTER TABLE bookings ADD COLUMN moved_at TEXT;`,
 ];
 
 export function openDb(file) {

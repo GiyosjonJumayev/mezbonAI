@@ -2,11 +2,11 @@
 import { randomBytes } from "node:crypto";
 import { CATEGORIES, LANGS, REGIONS } from "./i18n.mjs";
 
-/** Prices are placeholders to be tested with real providers. `listings: null` means no limit. */
+/** Prices are placeholders to be tested with real providers. `listings: null` means no limit; `assistant` is AI messages per day. */
 export const PLANS = {
-  free: { price: 0, commission: 12, listings: 3, days: [30], detail: false, intelligence: false },
-  pro: { price: 149_000, commission: 8, listings: null, days: [30, 90, 365], detail: true, intelligence: false },
-  business: { price: 490_000, commission: 6, listings: null, days: [30, 90, 365], detail: true, intelligence: true },
+  free: { price: 0, commission: 12, listings: 3, assistant: 15, days: [30], detail: false, intelligence: false },
+  pro: { price: 149_000, commission: 8, listings: null, assistant: 100, days: [30, 90, 365], detail: true, intelligence: false },
+  business: { price: 490_000, commission: 6, listings: null, assistant: 300, days: [30, 90, 365], detail: true, intelligence: true },
 };
 export const PERIOD_DAYS = 30;
 const RANK = Object.keys(PLANS);
@@ -166,6 +166,10 @@ export function createBusiness({ db, one, all, run, now, fail, authHost, ownList
         listings: p.detail ? listings : null,
         channels: p.detail ? group((b) => b.channel) : null,
         languages: p.detail ? group((b) => b.lang) : null,
+        // Which weekday and hour guests choose, by visit time.
+        busy: p.detail ? [...done.reduce((m, b) => { const k = `${new Date(`${b.date}T00:00:00Z`).getUTCDay() || 7}|${b.time}`; return m.set(k, (m.get(k) ?? 0) + b.guests); }, new Map())].map(([k, guests]) => ({ weekday: +k.split("|")[0], time: k.split("|")[1], guests })) : null,
+        // Confirmed visits whose day has passed without a ticket check-in.
+        noShow: done.filter((b) => !b.checked_in_at && b.date < today()).length,
         // No guest names: the export is for accounting, not for contact lists.
         rows: p.detail ? rows.map((b) => ({ created: tashkentDate(b.created_at), date: b.date, time: b.time, title: JSON.parse(b.i18n).uz.title, guests: b.guests, channel: b.channel, status: b.status, total: b.total_uzs, platform: b.platform_uzs, hotel: b.hotel_uzs, host: b.host_uzs })) : null,
       };
@@ -188,6 +192,7 @@ export function createBusiness({ db, one, all, run, now, fail, authHost, ownList
       const count = (r, from, to) => one("SELECT COUNT(*) n FROM searches WHERE demo=0 AND region=? AND created_at >= ? AND created_at < ?", r, from, to).n;
       const trend = regions.map((r) => ({ region: r, name: REGIONS[r], last: count(r, since(30), new Date(Date.now() + 1).toISOString()), before: count(r, since(60), since(30)) }));
       const unmet = { regions: top("region", (k) => REGIONS[k]), categories: top("category", (k) => CATEGORIES[k].uz) };
+      const dates = all("SELECT for_date date, COUNT(*) n, SUM(results=0) unmet FROM searches WHERE demo=0 AND for_date >= ? GROUP BY for_date ORDER BY n DESC, for_date LIMIT 10", today());
       const languages = all("SELECT lang, COUNT(*) n FROM searches WHERE demo=0 AND created_at >= ? GROUP BY lang ORDER BY n DESC LIMIT 6", since(90));
 
       const tips = [];
@@ -199,7 +204,7 @@ export function createBusiness({ db, one, all, run, now, fail, authHost, ownList
       if (gap) tips.push(`“${gap.name}” bo‘yicha ${gap.unmet} ta qidiruv javobsiz qolgan. Shunday taklif qo‘sha olasizmi?`);
       const near = unmet.regions.find((r) => r.unmet > 0 && !regions.includes(r.k));
       if (near) tips.push(`${near.name} viloyatida ${near.unmet} ta qidiruv javobsiz. U yerdagi hamkor bilan qo‘shma taklif o‘ylab ko‘ring.`);
-      return { prices, minSample: MIN_SAMPLE, unmet, trend, languages, tips, sampleSearches: one("SELECT COUNT(*) n FROM searches WHERE demo=1 AND created_at >= ?", since(90)).n };
+      return { prices, minSample: MIN_SAMPLE, unmet, trend, languages, dates, tips, sampleSearches: one("SELECT COUNT(*) n FROM searches WHERE demo=1 AND created_at >= ?", since(90)).n };
     },
 
     /** Platform income for the demo panel. */

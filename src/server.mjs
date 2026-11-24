@@ -101,6 +101,7 @@ export function createApp(db, { telegram = env.telegram, testPayments = env.test
       return core.payTest(id);
     },
     "POST /api/bookings/:id/cancel": ({ id }) => core.cancel(id),
+    "POST /api/bookings/:id/reschedule": ({ id, body }) => core.reschedule(id, body),
     "POST /api/bookings/:id/review": ({ id, body }) => core.review(id, body),
     "POST /api/bookings/:id/messages": ({ id, body, ip }) => { limitAi(ip); return core.message("guest", id, body); },
     "POST /api/hosts": ({ body, ip }) => { limitSignup(ip); return core.createHost(body.name, { type: body.type ?? "artisan" }); },
@@ -132,6 +133,9 @@ export function createApp(db, { telegram = env.telegram, testPayments = env.test
     "POST /api/host/tickets/:id/check-in": ({ key, id }) => core.checkIn(key, id),
     "GET /api/host/analytics": ({ key, q }) => core.analytics(key, Number(q.get("days")) || 30),
     "GET /api/host/intelligence": ({ key }) => core.intelligence(key),
+    "GET /api/host/assistant": ({ key }) => core.assistantBrief(key),
+    "POST /api/host/assistant": ({ key, body, ip }) => { limitAi(ip); return core.assistantChat(key, body); },
+    "POST /api/host/assistant/apply": ({ key, body, ip }) => { limitAi(ip); return core.assistantApply(key, body); },
     "GET /api/host/plans": ({ key }) => core.plans(key),
     "POST /api/host/plans/:id/subscribe-test": ({ key, id }) => {
       if (!testPayments) throw new AppError(403, "Sinov to‘lovi o‘chirilgan", "state");

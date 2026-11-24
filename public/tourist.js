@@ -159,21 +159,33 @@ async function ticketPage(id, token) {
     b.ticket.used_at ? el("div.note.ok", {}, t("ticketUsed")) : el("p.muted", {}, t("ticketHint"))), el("button.primary.noprint", { style: "justify-self:center", onclick: () => print() }, t("printTicket")));
 }
 
+/** Pick another open slot for an existing booking. */
+async function moveForm(b, done) {
+  const open = (await api(`/api/listings/${encodeURIComponent(b.listing_id)}/availability?days=45`)).map((d) => ({ ...d, times: d.times.filter((x) => x.free >= b.guests && !(d.date === b.date && x.time === b.time)) })).filter((d) => d.times.length);
+  if (!open.length) return el("div.card.movebox", {}, el("p.note.warn", {}, t("noSlots")));
+  const date = el("select", { onchange: () => fill() }, open.map((d) => el("option", { value: d.date }, longDate(d.date)))), time = el("select");
+  const fill = () => time.replaceChildren(...open.find((d) => d.date === date.value).times.map((x) => el("option", { value: x.time }, x.time)));
+  fill();
+  return el("div.card.movebox", {}, el("h2", {}, t("move")), el("div.fields", {}, el("label", {}, t("date"), date), el("label", {}, t("time"), time)), el("p.small.muted", {}, t("moveNote")),
+    el("div.row", {}, el("button.primary", { onclick: run(async () => { await api(`/api/bookings/${b.token}/reschedule`, { date: date.value, time: time.value }); toast(t("moved")); await done(); }) }, t("move")), el("button", { onclick: () => done() }, t("no"))));
+}
+
 async function bookingView(id, token) {
   let last = "";
   const draft = el("input", { maxlength: 1000, "aria-label": t("ask"), placeholder: t("ask"), required: true });
-  const load = async () => {
+  const load = async (force) => {
     const b = await api(`/api/bookings/${encodeURIComponent(token)}`);
     if (id !== renderId) return;
     const sig = JSON.stringify(b);
-    if (sig === last) return;
+    if (sig === last && !force) return;
     // A poll must not wipe a half-written review.
+    if (last && !force && app.querySelector(".movebox")) return;
     if (last && app.querySelector(".stars") && b.can_review && document.activeElement?.closest?.("textarea, .stars")) return;
     last = sig;
     const focused = document.activeElement === draft, i = b.i18n[lang];
     const tone = { confirmed: ".ok", declined: ".bad", expired: ".bad", cancelled: ".bad", pending: ".warn" }[b.status] ?? "";
     const stage = { pending: 1, paid: 2, confirmed: 3 }[b.status] ?? 0;
-    const send = (body) => run(async () => { await api(`/api/bookings/${b.token}/messages`, body()); draft.value = ""; await load(); });
+    const send = (body) => run(async () => { await api(`/api/bookings/${b.token}/messages`, body()); draft.value = ""; await load(true); });
     const chatOpen = ["paid", "confirmed"].includes(b.status);
     document.title = `${i.title} | SilkRoad`;
     page(link({ my: 1 }, "a", {}, t("myBookings")), el("div.two", {},
@@ -182,15 +194,16 @@ async function bookingView(id, token) {
         el("div.note" + tone, { role: "status" }, t(b.status), b.expires_at && el("div.small", {}, `${t("holdUntil")} ${new Intl.DateTimeFormat(lang, { hour: "2-digit", minute: "2-digit" }).format(new Date(b.expires_at))}`)),
         el("dl.facts", {}, [[t("date"), longDate(b.date)], [t("time"), b.time], [t("guests"), String(b.guests)], [t("name"), b.guest_name], [t("where"), placeOf(b)]].map(([k, v]) => el("div", {}, el("dt", {}, k), el("dd", {}, v)))),
         el("dl.sum", {}, [[t("toHost"), b.host_uzs], ...(b.hotel ? [[b.hotel, b.hotel_uzs]] : []), ["SilkRoad", b.platform_uzs]].map(([k, v]) => [el("dt", {}, k), el("dd", {}, money(v))]), el("dt.all", {}, t("total")), el("dd.all", {}, money(b.total_uzs))),
-        b.status === "pending" && cfg.testPayments && el("button.primary.wide", { onclick: run(async () => { await api(`/api/bookings/${b.token}/pay-test`, {}); await load(); }) }, t("pay")),
+        b.status === "pending" && cfg.testPayments && el("button.primary.wide", { onclick: run(async () => { await api(`/api/bookings/${b.token}/pay-test`, {}); await load(true); }) }, t("pay")),
         el("div.row", {},
           chatOpen && el("a.btn", { href: `/api/bookings/${b.token}/calendar.ics` }, t("calendar")),
           el("button", { onclick: async () => { if (await copy(`${location.origin}/?b=${b.token}`)) toast(t("copied")); } }, t("copyLink")),
-          b.can_cancel && el("button.danger", { onclick: run(async () => { if (!(await ask(t("cancelSure"), t("yes"), t("no")))) return; await api(`/api/bookings/${b.token}/cancel`, {}); await load(); }) }, t("cancel"))),
+          b.can_move && el("button", { onclick: run(async (e) => { const card = e.currentTarget.closest(".card"); app.querySelector(".movebox")?.remove(); card.after(await moveForm(b, () => load(true))); app.querySelector(".movebox")?.scrollIntoView({ block: "nearest" }); }) }, t("move")),
+          b.can_cancel && el("button.danger", { onclick: run(async () => { if (!(await ask(t("cancelSure"), t("yes"), t("no")))) return; await api(`/api/bookings/${b.token}/cancel`, {}); await load(true); }) }, t("cancel"))),
         el("p.small.muted", {}, t("keepLink"))),
       el("div.stack", { style: "gap:24px" },
         b.ticket ? ticketCard(b) : b.status === "paid" && el("div.card", {}, el("h2", {}, t("ticket")), el("p.muted", {}, t("ticketWait"))),
-        b.can_review && reviewForm(b, load),
+        b.can_review && reviewForm(b, () => load(true)),
         b.my_rating && el("div.card", {}, el("p", {}, el("span.star", {}, "★".repeat(b.my_rating)), " ", t("thanks"))),
         chatOpen && el("section.card", {}, el("h2", {}, t("ask")),
           b.messages.length > 0 && el("div.chat", { role: "log" }, b.messages.map((m) => { const mine = m.sender === "guest"; return el("div.msg" + (mine ? ".me" : ""), { dir: "auto" }, mine ? m.original : m.translated,
@@ -201,8 +214,8 @@ async function bookingView(id, token) {
     if (focused) draft.focus();
     app.querySelector(".chat")?.scrollTo(0, 1e6);
   };
-  await load();
-  if (id === renderId) poll = setInterval(() => { if (!document.hidden) load().catch(() => {}); }, 2500);
+  await load(true);
+  if (id === renderId) poll = setInterval(() => { if (!document.hidden) load(false).catch(() => {}); }, 2500);
 }
 
 // ---- my bookings ----------------------------------------------------------------------------

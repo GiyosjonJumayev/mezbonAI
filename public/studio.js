@@ -108,6 +108,14 @@ function columns(series, bucket) {
   return el("figure", {}, plot, el("div.row.between.small.muted", {}, el("span", {}, day(series[0].from)), el("span", {}, day(series.at(-1).to))));
 }
 
+/** Weekday by hour. One hue, darker means more guests; the number is always printed. */
+function busyTable(rows) {
+  if (!rows.length) return el("p.muted", {}, "Bu davrda ma’lumot yo‘q.");
+  const times = [...new Set(rows.map((r) => r.time))].sort(), max = Math.max(...rows.map((r) => r.guests)), at = new Map(rows.map((r) => [`${r.weekday}|${r.time}`, r.guests]));
+  return el("div.scroll", {}, el("table.heat", {}, el("thead", {}, el("tr", {}, el("th", { scope: "col" }, "Vaqt"), [1, 2, 3, 4, 5, 6, 7].map((d) => el("th.n", { scope: "col" }, WEEK[d % 7])))),
+    el("tbody", {}, times.map((tm) => el("tr", {}, el("td", {}, tm), [1, 2, 3, 4, 5, 6, 7].map((d) => { const n = at.get(`${d}|${tm}`) ?? 0; return el("td.n", { style: n ? `background:color-mix(in srgb, var(--bar) ${Math.round(8 + (n / max) * 32)}%, var(--card))` : null, title: `${WEEK[d % 7]}, ${tm}: ${n} mehmon` }, n ? String(n) : "·"); }))))));
+}
+
 export function analytics({ key, cfg }) {
   let days = 30;
   return live(async (refresh) => {
@@ -132,8 +140,9 @@ export function analytics({ key, cfg }) {
       tiles([["Sizning daromadingiz", som(t.earned), diff], ["Kutilayotgan (javob bermagansiz)", som(t.expected)], ["Tasdiqlangan bronlar", String(t.bookings), `${t.guests} mehmon`], ["O‘rtacha bron", som(t.average)]]),
       card("Daromad, bron qilingan sana bo‘yicha", t.bookings ? columns(a.series, a.bucket) : el("p.muted", {}, "Bu davrda tasdiqlangan bron yo‘q."),
         t.bookings > 0 && el("dl.sum", {}, [["Mehmonlar to‘lagan", t.gross], ["Platforma va mehmonxona ulushi", -t.fees]].map(([k, v]) => [el("dt", {}, k), el("dd", {}, v < 0 ? `−${som(-v)}` : som(v))]), el("dt.all", {}, "Sizga"), el("dd.all", {}, som(t.earned)))),
-      tiles([["Sahifa ko‘rishlar", String(t.views)], ["Ko‘rishdan bronga", pct(t.conversion)], ["Chipta bilan kelganlar", `${t.checkedIn} / ${t.bookings}`], ["Bekor qilingan / rad etilgan", `${t.cancelled} / ${t.declined}`]]),
+      tiles([["Sahifa ko‘rishlar", String(t.views)], ["Ko‘rishdan bronga", pct(t.conversion)], ["Chipta bilan kelganlar", `${t.checkedIn} / ${t.bookings}`], ["Bekor qilingan / rad etilgan", `${t.cancelled} / ${t.declined}`], ["Kelmagan (chiptasiz o‘tgan)", String(a.noShow)]]),
       a.detail ? [card("Takliflar", table([["Taklif", 0], ["Ko‘rish", 1], ["Bron", 1], ["Daromad", 1], ["Baho", 1], ["14 kunlik bandlik", 1]], a.listings.map((l) => [l.title, String(l.views), String(l.bookings), som(l.earned), l.rating == null ? "—" : `★ ${l.rating}`, pct(l.fill)]))),
+        card("Eng band vaqtlar (mehmonlar soni)", busyTable(a.busy)),
         el("div.two", {}, share(a.channels, (k) => CHANNEL[k], "Savdo kanallari"), share(a.languages, (k) => cfg.langNames[k], "Mehmonlar tili"))]
         : lock("Takliflar, kanallar va tillar kesimi, uzoq davr va CSV eksport Pro tarifida ochiladi."),
     ].flat();
@@ -146,12 +155,14 @@ export function market({ key, home, cfg }) {
   return live(async () => {
     const m = await api("/api/host/intelligence", null, key);
     const gap = (rows) => (rows.length ? table([["", 0], ["Javobsiz", 1], ["Jami", 1], ["Namuna", 1]], rows.map((r) => [r.name, String(r.unmet), String(r.searches), String(r.sample)])) : el("p.muted", {}, "Hali qidiruv yo‘q."));
+    const dates = m.dates.length ? table([["Sana", 0], ["Qidiruv", 1], ["Javobsiz", 1]], m.dates.map((x) => [`${day(x.date)}, ${weekday(x.date)}`, String(x.n), String(x.unmet)])) : el("p.muted", {}, "Turistlar hali aniq sana bilan qidirmagan.");
     return [
       m.sampleSearches > 0 && el("div.note.warn", {}, `Diqqat: ${m.sampleSearches} ta qidiruv namuna ma’lumot. “Namuna” ustuniga qarang.`),
       card("Tavsiyalar", m.tips.length ? el("ol.steps", { style: "grid-template-columns:1fr" }, m.tips.map((x) => el("li", {}, el("span", {}, x)))) : el("p.muted", {}, "Hozircha ma’lumot yetarli emas.")),
       card("Narxingiz bozorda", m.prices.length ? table([["Taklif", 0], ["Sizniki", 1], ["Eng past", 1], ["Mediana", 1], ["Eng yuqori", 1], ["Solishtirildi", 1]], m.prices.map((p) => [p.title, som(p.price), p.low == null ? "—" : som(p.low), p.median == null ? "—" : som(p.median), p.high == null ? "—" : som(p.high), `${p.sample}${p.demo ? " (namuna bor)" : ""}`])) : el("p.muted", {}, "Sotuvdagi taklifingiz yo‘q."),
         el("p.small.muted", {}, `Shu turdagi kamida ${m.minSample} ta boshqa taklif bo‘lsagina ko‘rsatiladi: bitta raqobatchining narxi ochilib qolmasligi uchun.`)),
       el("div.two", {}, card("Javobsiz talab: viloyatlar, 90 kun", gap(m.unmet.regions)), card("Javobsiz talab: mashg‘ulotlar, 90 kun", gap(m.unmet.categories))),
+      card("Turistlar qaysi sanalarni qidirmoqda", dates),
       el("div.two", {}, card("Hududingizga qiziqish", m.trend.length ? table([["Viloyat", 0], ["Oxirgi 30 kun", 1], ["Oldingi 30 kun", 1]], m.trend.map((x) => [x.name, String(x.last), String(x.before)])) : el("p.muted", {}, "Sotuvdagi taklifingiz yo‘q.")),
         card("Qidiruv tillari, 90 kun", m.languages.length ? table([["Til", 0], ["Qidiruv", 1]], m.languages.map((x) => [cfg.langNames[x.lang] ?? x.lang, String(x.n)])) : el("p.muted", {}, "Hali haqiqiy qidiruv yo‘q."))),
     ];
