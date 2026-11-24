@@ -6,8 +6,9 @@ import path from "node:path";
 import { pathToFileURL } from "node:url";
 import QRCode from "qrcode";
 import { openDb, ROOT, DATA_DIR } from "./db.mjs";
-import { AppError, CANCEL_HOURS, createCore, FEES } from "./core.mjs";
-import { CATEGORIES, LANGS, LANG_NAMES, PHRASES, REGIONS, REGION_NAMES, UI } from "./i18n.mjs";
+import { AppError, CANCEL_HOURS, createCore, HOTEL_FEE } from "./core.mjs";
+import { CATEGORIES, LANGS, LANG_NAMES, PHRASES, PROVIDER_TYPES, REGIONS, REGION_NAMES, UI } from "./i18n.mjs";
+import { PLANS } from "./business.mjs";
 import { aiEnabled } from "./ai.mjs";
 import { seed } from "./seed.mjs";
 import { bookingNotice, telegramSender } from "./telegram.mjs";
@@ -73,18 +74,23 @@ export function createApp(db, { telegram = env.telegram, testPayments = env.test
     if (b) Promise.resolve(telegram(h.telegram_chat, ...bookingNotice(b, ev.type))).catch(() => console.error("Telegram xabari yuborilmadi"));
   };
   const core = createCore(db, { notify });
-  const limitAi = limiter(20, 60e3), limitWrite = limiter(90, 60e3), limitSignup = limiter(10, 10 * 60e3);
+  const limitAi = limiter(20, 60e3), limitWrite = limiter(90, 60e3), limitSignup = limiter(10, 10 * 60e3), limitTicket = limiter(60, 60e3);
   const newSearch = counter(1, 10 * 60e3); // one visitor repeating a search is one signal of demand
+  const newView = counter(1, 30 * 60e3);
   const dropPhoto = (f) => (f ? unlink(path.join(PHOTOS, path.basename(f))).catch(() => {}) : null);
 
   const api = {
     "GET /healthz": () => ({ ok: true }),
-    "GET /api/config": () => ({ langs: LANGS, langNames: LANG_NAMES, regions: REGIONS, regionNames: REGION_NAMES, categories: CATEGORIES, ui: UI, phrases: PHRASES, fees: FEES, cancelHours: CANCEL_HOURS, ai: aiEnabled(), testPayments, usdRate: Number(process.env.USD_RATE) || null }),
+    "GET /api/config": () => ({ langs: LANGS, langNames: LANG_NAMES, regions: REGIONS, regionNames: REGION_NAMES, categories: CATEGORIES, ui: UI, phrases: PHRASES, providerTypes: PROVIDER_TYPES, plans: PLANS, hotelFee: HOTEL_FEE, cancelHours: CANCEL_HOURS, ai: aiEnabled(), testPayments, usdRate: Number(process.env.USD_RATE) || null }),
     "GET /api/listings": ({ q, ip }) => {
       const f = { region: q.get("region"), category: q.get("category"), date: q.get("date"), guests: Number(q.get("guests")), lang: q.get("lang"), source: q.get("source") === "ai" ? "ai" : "web" };
       return core.search({ ...f, log: newSearch([ip, f.source, f.region, f.category].join("|")) });
     },
-    "GET /api/listings/:id": ({ id }) => core.listing(id),
+    "GET /api/listings/:id": ({ id, q, ip }) => {
+      const l = core.listing(id);
+      if (q.get("lang") && newView([ip, id].join("|"))) core.view(id, q.get("lang")); // only the traveller site sends lang
+      return l;
+    },
     "GET /api/listings/:id/availability": ({ id, q }) => core.availability(id, q.get("from"), Number(q.get("days")) || 21),
     "GET /api/hotels": () => core.hotels(),
     "GET /api/hotels/:id": ({ id }) => { const h = core.hotel(id); if (!h) throw new AppError(404, "Mehmonxona topilmadi", "notfound"); return h; },
@@ -97,7 +103,7 @@ export function createApp(db, { telegram = env.telegram, testPayments = env.test
     "POST /api/bookings/:id/cancel": ({ id }) => core.cancel(id),
     "POST /api/bookings/:id/review": ({ id, body }) => core.review(id, body),
     "POST /api/bookings/:id/messages": ({ id, body, ip }) => { limitAi(ip); return core.message("guest", id, body); },
-    "POST /api/hosts": ({ body, ip }) => { limitSignup(ip); return core.createHost(body.name); },
+    "POST /api/hosts": ({ body, ip }) => { limitSignup(ip); return core.createHost(body.name, { type: body.type ?? "artisan" }); },
     "GET /api/host": ({ key }) => core.hostHome(key),
     "POST /api/host/drafts": ({ key, body, ip }) => { limitAi(ip); return core.createDraft(key, body.transcript); },
     "POST /api/host/listings/:id": ({ key, id, body }) => core.updateListing(key, id, body),
@@ -120,7 +126,21 @@ export function createApp(db, { telegram = env.telegram, testPayments = env.test
     "POST /api/host/bookings/:id/accept": ({ key, id }) => core.decide(key, id, true),
     "POST /api/host/bookings/:id/decline": ({ key, id }) => core.decide(key, id, false),
     "POST /api/host/bookings/:id/messages": ({ key, id, body, ip }) => { limitAi(ip); return core.message("host", key, { ...body, booking_id: id }); },
-    "GET /api/panel": ({ q }) => core.panel({ days: Number(q.get("days")) || 0, demo: q.get("demo") !== "0" }),
+    "GET /api/host/listings/:id/calendar": ({ key, id, q }) => core.slotCalendar(key, id, q.get("from"), Number(q.get("days")) || 14),
+    "POST /api/host/listings/:id/slot": ({ key, id, body }) => core.setSlot(key, id, body),
+    "GET /api/host/tickets/:id": ({ key, id, ip }) => { limitTicket(ip); return core.ticket(key, id); },
+    "POST /api/host/tickets/:id/check-in": ({ key, id }) => core.checkIn(key, id),
+    "GET /api/host/analytics": ({ key, q }) => core.analytics(key, Number(q.get("days")) || 30),
+    "GET /api/host/intelligence": ({ key }) => core.intelligence(key),
+    "GET /api/host/plans": ({ key }) => core.plans(key),
+    "POST /api/host/plans/:id/subscribe-test": ({ key, id }) => {
+      if (!testPayments) throw new AppError(403, "Sinov to‘lovi o‘chirilgan", "state");
+      return core.subscribeTest(key, id);
+    },
+    "GET /api/panel": ({ q }) => {
+      const { platform, ...p } = core.panel({ days: Number(q.get("days")) || 0, demo: q.get("demo") !== "0" });
+      return testPayments ? { ...p, platform } : p; // platform income is for the demo, never public in production
+    },
     "GET /feeds/products.json": () => core.feed(),
   };
   const routes = Object.entries(api).map(([k, fn]) => {
@@ -131,7 +151,7 @@ export function createApp(db, { telegram = env.telegram, testPayments = env.test
   const server = http.createServer(async (req, res) => {
     res.setHeader("X-Content-Type-Options", "nosniff");
     res.setHeader("Referrer-Policy", "no-referrer"); // booking links are secrets
-    res.setHeader("Permissions-Policy", "microphone=(self), camera=(), geolocation=()");
+    res.setHeader("Permissions-Policy", "microphone=(self), camera=(self), geolocation=()");
     res.setHeader("Content-Security-Policy", CSP);
     const json = (s, v) => {
       res.writeHead(s, { "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store" });
@@ -210,7 +230,7 @@ if (import.meta.url === pathToFileURL(process.argv[1] ?? "").href) {
     process.exit(1);
   });
   server.listen(port, host, () => {
-    console.log(`Mezbon AI: http://localhost:${port}   (AI: ${aiEnabled() ? "Claude" : "demo rejim"})`);
+    console.log(`SilkRoad Experience OS: http://localhost:${port}   (AI: ${aiEnabled() ? "Claude" : "demo rejim"})`);
     if (host === "0.0.0.0") for (const i of Object.values(os.networkInterfaces()).flat()) if (i.family === "IPv4" && !i.internal) console.log(`Telefon uchun:  http://${i.address}:${port}`);
   });
   for (const s of ["SIGINT", "SIGTERM"]) process.on(s, () => {

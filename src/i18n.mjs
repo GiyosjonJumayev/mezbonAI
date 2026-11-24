@@ -40,6 +40,14 @@ export const CATEGORIES = {
   tour: T("Gid bilan sayr", "Guided walk", "Прогулка с гидом", "导游徒步", "가이드 투어", "ガイドウォーク", "Rehberli yürüyüş", "جولة مع مرشد", "Geführter Rundgang", "Balade guidée"),
 };
 
+/** Who runs the experience. */
+export const PROVIDER_TYPES = {
+  artisan: T("Hunarmand", "Artisan", "Ремесленник", "手工艺人", "장인", "職人", "Zanaatkâr", "حِرَفي", "Kunsthandwerk", "Artisan"),
+  guesthouse: T("Oilaviy mehmon uyi", "Family guesthouse", "Семейный гостевой дом", "家庭旅馆", "가족 게스트하우스", "家族経営の宿", "Aile pansiyonu", "بيت ضيافة عائلي", "Familienpension", "Maison d’hôtes"),
+  operator: T("Turizm biznesi", "Tourism business", "Турбизнес", "旅游企业", "관광 사업자", "観光事業者", "Turizm işletmesi", "شركة سياحية", "Tourismusbetrieb", "Entreprise de tourisme"),
+  provider: T("Tajriba tashkilotchisi", "Experience provider", "Организатор впечатлений", "体验提供者", "체험 운영자", "体験プロバイダー", "Deneyim sağlayıcı", "مقدم تجارب", "Erlebnisanbieter", "Organisateur d’expériences"),
+};
+
 export const DESC = {
   uz: (f) => `Mezbon: ${f.host}, ${f.place}. Davomiyligi: ${f.dur} daqiqa. Guruh: ${f.cap} kishigacha.`,
   en: (f) => `Meet ${f.host}, your local host in ${f.place}. Duration: ${f.dur} minutes. Group size: up to ${f.cap}.`,
@@ -141,5 +149,11 @@ export const UI = {
   e_rate: T("Juda ko‘p so‘rov. Bir daqiqadan keyin urining.", "Too many requests. Try again in a minute.", "Слишком много запросов. Повторите через минуту.", "请求过多，请一分钟后再试。", "요청이 너무 많습니다. 1분 후 다시 시도하세요.", "リクエストが多すぎます。1分後にお試しください。", "Çok fazla istek. Bir dakika sonra deneyin.", "طلبات كثيرة. حاول بعد دقيقة.", "Zu viele Anfragen. Bitte in einer Minute erneut.", "Trop de requêtes. Réessayez dans une minute."),
   e_network: T("Ulanib bo‘lmadi. Internetni tekshiring.", "Could not connect. Check your internet.", "Нет соединения. Проверьте интернет.", "无法连接，请检查网络。", "연결할 수 없습니다. 인터넷을 확인하세요.", "接続できません。通信環境をご確認ください。", "Bağlanılamadı. İnternetinizi kontrol edin.", "تعذر الاتصال. تحقق من الإنترنت.", "Keine Verbindung. Bitte Internet prüfen.", "Connexion impossible. Vérifiez votre réseau."),
   e_other: T("Bajarilmadi. Ma’lumotlarni tekshirib, qayta urining.", "That did not work. Check the details and try again.", "Не получилось. Проверьте данные и повторите.", "操作失败，请检查后重试。", "처리하지 못했습니다. 내용을 확인하고 다시 시도하세요.", "処理できませんでした。内容を確認してもう一度お試しください。", "İşlem yapılamadı. Bilgileri kontrol edip tekrar deneyin.", "لم يتم ذلك. تحقق من البيانات وحاول مجدداً.", "Das hat nicht geklappt. Angaben prüfen und erneut versuchen.", "Échec. Vérifiez les informations et réessayez."),
+  tagline: T("Har bir mahalliy tajriba. Bitta raqamli platforma.", "Every Local Experience. One Digital Platform.", "Все местные впечатления. Одна цифровая платформа.", "汇聚本地体验，尽在一个平台。", "모든 현지 체험을 하나의 디지털 플랫폼에서.", "あらゆる現地体験を、ひとつのプラットフォームで。", "Tüm yerel deneyimler. Tek dijital platform.", "كل التجارب المحلية في منصة رقمية واحدة.", "Alle lokalen Erlebnisse. Eine digitale Plattform.", "Toutes les expériences locales. Une seule plateforme."),
+  ticket: T("Chipta", "Ticket", "Билет", "电子票", "티켓", "チケット", "Bilet", "التذكرة", "Ticket", "Billet"),
+  ticketHint: T("Kelganda shu QR kodni mezbonga ko‘rsating.", "Show this QR code to your host when you arrive.", "Покажите этот QR-код мастеру по прибытии.", "到达时请向主人出示此二维码。", "도착하면 호스트에게 이 QR 코드를 보여주세요.", "到着時にこのQRコードをホストに提示してください。", "Vardığınızda bu QR kodu ev sahibine gösterin.", "أظهر رمز QR هذا للمضيف عند الوصول.", "Zeigen Sie diesen QR-Code dem Gastgeber bei der Ankunft.", "Présentez ce QR code à l’hôte à votre arrivée."),
+  ticketWait: T("Chipta mezbon tasdiqlagandan keyin chiqadi.", "Your ticket appears once the host confirms.", "Билет появится после подтверждения мастером.", "主人确认后将显示电子票。", "호스트가 확정하면 티켓이 표시됩니다.", "ホストの確定後にチケットが表示されます。", "Biletiniz ev sahibi onayladığında görünür.", "ستظهر تذكرتك بعد تأكيد المضيف.", "Ihr Ticket erscheint nach der Bestätigung.", "Votre billet apparaît après confirmation."),
+  ticketUsed: T("Chipta ishlatildi. Yaxshi vaqt o‘tkazing!", "Ticket used. Enjoy your visit!", "Билет использован. Приятного визита!", "电子票已使用，祝您愉快！", "티켓이 사용되었습니다. 즐거운 시간 되세요!", "チケット使用済み。お楽しみください！", "Bilet kullanıldı. İyi eğlenceler!", "تم استخدام التذكرة. زيارة ممتعة!", "Ticket eingelöst. Viel Freude!", "Billet utilisé. Bonne visite !"),
+  printTicket: T("Chiptani chop etish", "Print ticket", "Распечатать билет", "打印电子票", "티켓 인쇄", "チケットを印刷", "Bileti yazdır", "اطبع التذكرة", "Ticket drucken", "Imprimer le billet"),
   sample: T("Namuna", "Sample", "Пример", "示例", "예시", "サンプル", "Örnek", "عينة", "Beispiel", "Exemple"),
 };

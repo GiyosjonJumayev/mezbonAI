@@ -1,7 +1,7 @@
 {
-  "name": "mezbon-ai",
-  "version": "0.2.0",
-  "description": "Uzbek craftspeople describe their craft by voice; Mezbon turns it into a bookable experience in ten languages.",
+  "name": "silkroad-experience-os",
+  "version": "0.3.0",
+  "description": "AI-powered operating system for local tourism businesses: multilingual experiences, bookings, QR tickets and revenue analytics.",
   "private": true,
   "license": "UNLICENSED",
   "type": "module",

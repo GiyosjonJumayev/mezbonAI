@@ -4,7 +4,7 @@ const app = document.getElementById("app");
 const query = () => new URLSearchParams(location.search);
 let cfg;
 try { cfg = await api("/api/config"); } catch (e) {
-  app.replaceChildren(el("div.wrap", {}, el("div.note.bad", { role: "alert" }, "Mezbon: " + e.message), el("button", { onclick: () => location.reload() }, "↻")));
+  app.replaceChildren(el("div.wrap", {}, el("div.note.bad", { role: "alert" }, e.message), el("button", { onclick: () => location.reload() }, "↻")));
   throw e;
 }
 let lang = [query().get("lang"), store.get("lang"), ...(navigator.languages ?? []).map((l) => l.slice(0, 2))].find((l) => cfg.langs.includes(l)) ?? "en";
@@ -72,9 +72,9 @@ async function catalog(id) {
 
 // ---- listing --------------------------------------------------------------------------------
 async function detail(id, lid) {
-  const [l, open] = await Promise.all([api(`/api/listings/${encodeURIComponent(lid)}`), api(`/api/listings/${encodeURIComponent(lid)}/availability?days=30`)]);
+  const [l, open] = await Promise.all([api(`/api/listings/${encodeURIComponent(lid)}?lang=${lang}`), api(`/api/listings/${encodeURIComponent(lid)}/availability?days=30`)]);
   if (id !== renderId) return;
-  document.title = `${l.i18n[lang].title} | Mezbon`;
+  document.title = `${l.i18n[lang].title} | SilkRoad`;
   const days = open.filter((d) => d.times.some((x) => x.free > 0));
   let day = days[0], slot = day?.times.find((x) => x.free > 0), guests = Math.min(2, slot?.free ?? 1);
 
@@ -122,7 +122,7 @@ async function detail(id, lid) {
   page(back(), el("div.two", {},
     el("div.stack", { style: "gap:22px" },
       el("div.card", {}, el("div.art", { style: tint(l.category) }, visual(l, l.i18n[lang].title), l.demo && el("span.badge.warn", {}, t("sample"))), el("h1", {}, l.i18n[lang].title), el("p", {}, l.i18n[lang].description),
-        el("dl.facts", {}, [[t("host"), l.host], [t("where"), placeOf(l)], [t("duration"), `${l.duration_min} ${t("minutes")}`], [t("group"), `${l.capacity} ${t("upTo")}`]].map(([k, v]) => el("div", {}, el("dt", {}, k), el("dd", {}, v))))),
+        el("dl.facts", {}, [[t("host"), `${l.host}, ${cfg.providerTypes[l.host_type][lang].toLocaleLowerCase(lang)}`], [t("where"), placeOf(l)], [t("duration"), `${l.duration_min} ${t("minutes")}`], [t("group"), `${l.capacity} ${t("upTo")}`]].map(([k, v]) => el("div", {}, el("dt", {}, k), el("dd", {}, v))))),
       l.reviewList.length > 0 && el("section.card", {}, el("h2", {}, t("reviews")), l.reviewList.map((r) => el("div.review", {}, el("div.row", {}, el("span.star", { "aria-label": `${r.rating} / 5` }, "★".repeat(r.rating)), el("b", {}, r.by), el("span.muted.small", {}, r.date)), r.text && el("p", { dir: "auto", lang: r.lang }, r.text))))),
     form));
 }
@@ -138,6 +138,25 @@ function reviewForm(b, done) {
     [...stars.children].forEach((s, k) => { s.classList.toggle("on", k < i); s.setAttribute("aria-checked", String(k === i - 1)); });
   } }, "★")));
   return el("div.card", {}, el("h2", {}, t("rate")), stars, el("label", {}, t("rateText"), text), send);
+}
+
+const ticketLink = (code) => `${location.origin}/mezbon#chipta/${code}`;
+const ticketText = (code) => code.replace(/(.{4})(?=.)/g, "$1-");
+const ticketQr = (code) => el("img.qr", { src: `/api/qr.svg?text=${encodeURIComponent(ticketLink(code))}`, alt: `${t("ticket")} ${ticketText(code)}` });
+
+function ticketCard(b) {
+  if (b.ticket.used_at) return el("section.card", {}, el("h2", {}, t("ticket")), el("div.note.ok", { role: "status" }, t("ticketUsed")));
+  return el("section.card.ticket", {}, el("h2", {}, t("ticket")), ticketQr(b.ticket.code), el("b.code", { dir: "ltr" }, ticketText(b.ticket.code)), el("p.muted.small", {}, t("ticketHint")), link({ b: b.token, ticket: 1 }, "a.btn", {}, t("printTicket")));
+}
+
+/** A single sheet to print or screenshot. */
+async function ticketPage(id, token) {
+  const b = await api(`/api/bookings/${encodeURIComponent(token)}`);
+  if (id !== renderId) return;
+  if (!b.ticket) return go({ b: token });
+  page(el("div.noprint", {}, link({ b: token }, "a", {}, b.i18n[lang].title)), el("section.card.ticket.sheet", {}, el("p.muted", {}, "SilkRoad Experience OS"), el("h1", {}, b.i18n[lang].title), ticketQr(b.ticket.code), el("b.code", { dir: "ltr" }, ticketText(b.ticket.code)),
+    el("dl.facts", {}, [[t("date"), longDate(b.date)], [t("time"), b.time], [t("guests"), String(b.guests)], [t("name"), b.guest_name], [t("where"), placeOf(b)]].map(([k, v]) => el("div", {}, el("dt", {}, k), el("dd", {}, v)))),
+    b.ticket.used_at ? el("div.note.ok", {}, t("ticketUsed")) : el("p.muted", {}, t("ticketHint"))), el("button.primary.noprint", { style: "justify-self:center", onclick: () => print() }, t("printTicket")));
 }
 
 async function bookingView(id, token) {
@@ -156,13 +175,13 @@ async function bookingView(id, token) {
     const stage = { pending: 1, paid: 2, confirmed: 3 }[b.status] ?? 0;
     const send = (body) => run(async () => { await api(`/api/bookings/${b.token}/messages`, body()); draft.value = ""; await load(); });
     const chatOpen = ["paid", "confirmed"].includes(b.status);
-    document.title = `${i.title} | Mezbon`;
+    document.title = `${i.title} | SilkRoad`;
     page(link({ my: 1 }, "a", {}, t("myBookings")), el("div.two", {},
       el("div.card", {}, el("h1", {}, i.title),
         stage > 0 && el("ol.track", {}, ["stepReserved", "stepPaid", "stepConfirmed"].map((k, n) => el("li" + (n < stage ? ".done" : ""), {}, t(k)))),
         el("div.note" + tone, { role: "status" }, t(b.status), b.expires_at && el("div.small", {}, `${t("holdUntil")} ${new Intl.DateTimeFormat(lang, { hour: "2-digit", minute: "2-digit" }).format(new Date(b.expires_at))}`)),
         el("dl.facts", {}, [[t("date"), longDate(b.date)], [t("time"), b.time], [t("guests"), String(b.guests)], [t("name"), b.guest_name], [t("where"), placeOf(b)]].map(([k, v]) => el("div", {}, el("dt", {}, k), el("dd", {}, v)))),
-        el("dl.sum", {}, [[t("toHost"), b.host_uzs], ...(b.hotel ? [[b.hotel, b.hotel_uzs]] : []), ["Mezbon", b.platform_uzs]].map(([k, v]) => [el("dt", {}, k), el("dd", {}, money(v))]), el("dt.all", {}, t("total")), el("dd.all", {}, money(b.total_uzs))),
+        el("dl.sum", {}, [[t("toHost"), b.host_uzs], ...(b.hotel ? [[b.hotel, b.hotel_uzs]] : []), ["SilkRoad", b.platform_uzs]].map(([k, v]) => [el("dt", {}, k), el("dd", {}, money(v))]), el("dt.all", {}, t("total")), el("dd.all", {}, money(b.total_uzs))),
         b.status === "pending" && cfg.testPayments && el("button.primary.wide", { onclick: run(async () => { await api(`/api/bookings/${b.token}/pay-test`, {}); await load(); }) }, t("pay")),
         el("div.row", {},
           chatOpen && el("a.btn", { href: `/api/bookings/${b.token}/calendar.ics` }, t("calendar")),
@@ -170,6 +189,7 @@ async function bookingView(id, token) {
           b.can_cancel && el("button.danger", { onclick: run(async () => { if (!(await ask(t("cancelSure"), t("yes"), t("no")))) return; await api(`/api/bookings/${b.token}/cancel`, {}); await load(); }) }, t("cancel"))),
         el("p.small.muted", {}, t("keepLink"))),
       el("div.stack", { style: "gap:24px" },
+        b.ticket ? ticketCard(b) : b.status === "paid" && el("div.card", {}, el("h2", {}, t("ticket")), el("p.muted", {}, t("ticketWait"))),
         b.can_review && reviewForm(b, load),
         b.my_rating && el("div.card", {}, el("p", {}, el("span.star", {}, "★".repeat(b.my_rating)), " ", t("thanks"))),
         chatOpen && el("section.card", {}, el("h2", {}, t("ask")),
@@ -201,15 +221,16 @@ async function render() {
   clearInterval(poll);
   document.documentElement.lang = lang;
   document.documentElement.dir = lang === "ar" ? "rtl" : "ltr";
-  document.title = `Mezbon: ${t("headline")}`;
+  document.title = `SilkRoad Experience OS: ${t("headline")}`;
   pick.value = lang;
   pick.setAttribute("aria-label", t("language"));
   document.getElementById("skip").textContent = t("skip");
-  document.getElementById("foot").textContent = cfg.testPayments ? t("testNote") : "Mezbon";
+  document.getElementById("foot").textContent = cfg.testPayments ? `${t("tagline")} ${t("testNote")}` : t("tagline");
   const q = query();
   document.getElementById("nav").replaceChildren(link({ my: 1 }, "a", { "aria-current": q.has("my") ? "page" : null }, t("myBookings")), el("a", { href: "/mezbon" }, t("forHosts")));
   try {
-    if (q.get("b")) await bookingView(id, q.get("b"));
+    if (q.get("b") && q.has("ticket")) await ticketPage(id, q.get("b"));
+    else if (q.get("b")) await bookingView(id, q.get("b"));
     else if (q.get("l")) await detail(id, q.get("l"));
     else if (q.has("my")) await mine(id);
     else await catalog(id);

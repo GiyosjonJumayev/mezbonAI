@@ -5,7 +5,7 @@ process.env.MEZBON_OFFLINE = "1";
 const { openDb } = await import("../src/db.mjs");
 const { createCore, split, tashkentNow } = await import("../src/core.mjs");
 const { createBot } = await import("../src/telegram.mjs");
-const { LANGS, CATEGORIES, PHRASES, REGION_NAMES, REGIONS, UI } = await import("../src/i18n.mjs");
+const { LANGS, CATEGORIES, PHRASES, PROVIDER_TYPES, REGION_NAMES, REGIONS, UI } = await import("../src/i18n.mjs");
 
 const SAY = "Rishtonda kulolman, ikki soat, yuz ellik ming so'm, 4 kishi";
 const day = (n) => tashkentNow(new Date(Date.now() + n * 864e5)).slice(0, 10);
@@ -25,7 +25,7 @@ const status = (fn, s) => assert.throws(fn, (e) => { assert.equal(e.status, s, e
 
 test("all strings exist in all languages", () => {
   assert.deepEqual(Object.keys(REGION_NAMES), Object.keys(REGIONS));
-  for (const set of [CATEGORIES, PHRASES, REGION_NAMES, UI]) for (const [k, v] of Object.entries(set)) for (const l of LANGS) assert.ok(v[l], `${k}.${l}`);
+  for (const set of [CATEGORIES, PHRASES, PROVIDER_TYPES, REGION_NAMES, UI]) for (const [k, v] of Object.entries(set)) for (const l of LANGS) assert.ok(v[l], `${k}.${l}`);
 });
 
 test("split always adds up", () => {

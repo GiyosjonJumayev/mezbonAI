@@ -1,8 +1,9 @@
 // All business rules. No HTTP, Telegram or MCP code here: those are thin adapters over this module.
 import { randomBytes } from "node:crypto";
-import { CATEGORIES, LANGS, REGIONS } from "./i18n.mjs";
+import { CATEGORIES, LANGS, PROVIDER_TYPES, REGIONS } from "./i18n.mjs";
 import { missing, templateI18n } from "./extract.mjs";
 import { buildListing, translate } from "./ai.mjs";
+import { createBusiness, effectivePlan, newTicketCode, PLANS } from "./business.mjs";
 
 /** `message` is Uzbek for hosts; `code` lets the tourist site and AI assistants show their own wording. */
 export class AppError extends Error {
@@ -14,16 +15,16 @@ const id = (p) => p + randomBytes(5).toString("hex");
 const secret = () => randomBytes(18).toString("base64url");
 const now = () => new Date().toISOString();
 
-export const FEES = { web: { platform: 12, hotel: 0 }, hotel: { platform: 12, hotel: 8 }, ai: { platform: 12, hotel: 0 } };
+/** A hotel that refers a guest earns this share. The platform's share depends on the provider's plan. */
+export const HOTEL_FEE = 8;
 export const HOLD_MIN = 30;
 export const CANCEL_HOURS = 24;
 const LIVE = "(status IN ('paid','confirmed') OR (status='pending' AND expires_at > ?))";
 const PAID = "status IN ('paid','confirmed')";
 
-export function split(total, channel) {
-  const f = FEES[channel];
-  const platform = Math.round((total * f.platform) / 100);
-  const hotel = Math.round((total * f.hotel) / 100);
+export function split(total, channel, plan = "free") {
+  const platform = Math.round((total * PLANS[plan].commission) / 100);
+  const hotel = channel === "hotel" ? Math.round((total * HOTEL_FEE) / 100) : 0;
   return { total, platform, hotel, host: total - platform - hotel };
 }
 
@@ -59,11 +60,11 @@ export function createCore(db, { notify = () => {} } = {}) {
   const full = (r) => r && { ...r, weekdays: JSON.parse(r.weekdays), times: JSON.parse(r.times), i18n: JSON.parse(r.i18n), edited: JSON.parse(r.edited), closed: JSON.parse(r.closed) };
   const publicListing = (r) => ({
     id: r.id, category: r.category, region: r.region, place: r.place, price_uzs: r.price_uzs, duration_min: r.duration_min,
-    capacity: r.capacity, weekdays: r.weekdays, times: r.times, i18n: r.i18n, photo: r.photo, host: r.host_name, demo: Boolean(r.host_demo),
+    capacity: r.capacity, weekdays: r.weekdays, times: r.times, i18n: r.i18n, photo: r.photo, host: r.host_name, host_type: r.host_type, demo: Boolean(r.host_demo),
     rating: r.rating == null ? null : Math.round(r.rating * 10) / 10, reviews: r.review_count,
   });
   const hostListing = (r) => ({ ...publicListing(r), status: r.status, cert_no: r.cert_no, transcript: r.transcript, engine: r.engine, edited: r.edited, closed: r.closed, missing: missing(r) });
-  const LISTING = `SELECT l.*, h.name host_name, h.demo host_demo,
+  const LISTING = `SELECT l.*, h.name host_name, h.demo host_demo, h.type host_type, h.plan host_plan, h.plan_until host_plan_until,
     (SELECT AVG(rating) FROM reviews WHERE listing_id=l.id) rating, (SELECT COUNT(*) FROM reviews WHERE listing_id=l.id) review_count
     FROM listings l JOIN hosts h ON h.id = l.host_id`;
 
@@ -92,7 +93,7 @@ export function createCore(db, { notify = () => {} } = {}) {
   const msgs = (bid) => all("SELECT sender, original, lang, translated, translated_lang, engine, created_at FROM messages WHERE booking_id = ? ORDER BY id", bid);
   const isExpired = (b) => b.status === "pending" && b.expires_at <= now();
   const canCancel = (b) => (b.status === "pending" ? !isExpired(b) : ["paid", "confirmed"].includes(b.status) && startsAt(b.date, b.time) - Date.now() >= CANCEL_HOURS * 3600e3);
-  const canReview = (b) => b.status === "confirmed" && startsAt(b.date, b.time) <= new Date() && b.review_rating == null;
+  const canReview = (b) => b.status === "confirmed" && (b.checked_in_at || startsAt(b.date, b.time) <= new Date()) && b.review_rating == null;
   const openOn = (l, date) => l.weekdays.includes(isoWeekday(date)) && !l.closed.includes(date);
 
   /** Free places per open slot for `days` calendar days from `from`. Past slots are left out. */
@@ -100,11 +101,15 @@ export function createCore(db, { notify = () => {} } = {}) {
     const to = addDays(from, days), clock = tashkentNow().slice(0, 16);
     const used = new Map(all(`SELECT date, time, SUM(guests) n FROM bookings WHERE listing_id=? AND date>=? AND date<? AND ${LIVE} GROUP BY date, time`, l.id, from, to, now())
       .map((r) => [`${r.date}T${r.time}`, r.n]));
+    const rules = new Map(all("SELECT date, time, capacity FROM slot_rules WHERE listing_id=? AND date>=? AND date<?", l.id, from, to).map((r) => [`${r.date}T${r.time}`, r.capacity]));
     const out = [];
     for (let i = 0; i < days; i++) {
       const date = addDays(from, i);
       if (!openOn(l, date)) continue;
-      const times = l.times.filter((t) => `${date}T${t}` > clock).map((time) => ({ time, free: Math.max(0, l.capacity - (used.get(`${date}T${time}`) ?? 0)) }));
+      const times = l.times.filter((t) => `${date}T${t}` > clock).map((time) => {
+        const k = `${date}T${time}`;
+        return { time, free: Math.max(0, (rules.get(k) ?? l.capacity) - (used.get(k) ?? 0)) };
+      });
       if (times.length) out.push({ date, times });
     }
     return out;
@@ -115,11 +120,15 @@ export function createCore(db, { notify = () => {} } = {}) {
     return l;
   }
 
+  const biz = createBusiness({ db, one, all, run, now, authHost, ownListing, booking, openOn, isDate, addDays, id, today: () => tashkentNow().slice(0, 10), fail: (s, m, c) => new AppError(s, m, c) });
+
   const core = {
+    ...biz,
     // ---- hosts -------------------------------------------------------------------------------
-    createHost(name, { telegramChat = null, demo = 0 } = {}) {
+    createHost(name, { telegramChat = null, demo = 0, type = "artisan" } = {}) {
+      if (!known(PROVIDER_TYPES, type)) throw bad("Faoliyat turi noto‘g‘ri");
       const h = { id: id("h_"), key: secret(), name: str(name, "Ism", 60) };
-      run("INSERT INTO hosts (id,key,name,telegram_chat,demo,created_at) VALUES (?,?,?,?,?,?)", h.id, h.key, h.name, telegramChat, demo, now());
+      run("INSERT INTO hosts (id,key,name,telegram_chat,demo,created_at,type) VALUES (?,?,?,?,?,?,?)", h.id, h.key, h.name, telegramChat, demo, now(), type);
       return h;
     },
     authHost,
@@ -127,14 +136,14 @@ export function createCore(db, { notify = () => {} } = {}) {
 
     hostHome(key) {
       const h = authHost(key);
-      const rows = all(`SELECT b.id, b.date, b.time, b.guests, b.guest_name, b.lang, b.channel, b.status, b.host_uzs, b.total_uzs, b.created_at, l.i18n, l.id listing_id
+      const rows = all(`SELECT b.id, b.date, b.time, b.guests, b.guest_name, b.lang, b.channel, b.status, b.host_uzs, b.total_uzs, b.created_at, b.checked_in_at, l.i18n, l.id listing_id
         FROM bookings b JOIN listings l ON l.id=b.listing_id WHERE l.host_id=? AND b.status!='pending' AND NOT (b.status='cancelled' AND b.expires_at IS NOT NULL)
         ORDER BY b.status='paid' DESC, b.date, b.time LIMIT 100`, h.id);
       const sums = one(`SELECT COALESCE(SUM(CASE WHEN b.status='confirmed' THEN b.host_uzs END),0) earned, COALESCE(SUM(CASE WHEN b.status='confirmed' THEN b.guests END),0) guests, COUNT(CASE WHEN b.status='paid' THEN 1 END) waiting
         FROM bookings b JOIN listings l ON l.id=b.listing_id WHERE l.host_id=?`, h.id);
       const today = tashkentNow().slice(0, 10);
       return {
-        id: h.id, name: h.name, sums,
+        id: h.id, name: h.name, type: h.type, plan: biz.planOf(h), sums,
         listings: all(`${LISTING} WHERE l.host_id=? ORDER BY l.created_at DESC`, h.id).map(full).map(hostListing),
         bookings: rows.map(({ i18n, ...b }) => ({ ...b, title: JSON.parse(i18n).uz.title, past: b.date < today, messages: msgs(b.id) })),
       };
@@ -202,8 +211,10 @@ export function createCore(db, { notify = () => {} } = {}) {
       return { listing: hostListing(ownListing(key, lid)), old };
     },
     publish(key, lid) {
-      const gaps = missing(ownListing(key, lid));
+      const l = ownListing(key, lid), gaps = missing(l);
       if (gaps.length) throw new AppError(409, gaps.map((g) => g.text).join(" "));
+      const p = biz.planOf(authHost(key));
+      if (l.status !== "published" && p.listings != null && p.used >= p.listings) throw new AppError(409, `Bepul tarifda ${p.listings} ta taklif sotiladi. Birini to‘xtating yoki Pro tarifga o‘ting`, "plan");
       run("UPDATE listings SET status='published', published_at=COALESCE(published_at, ?) WHERE id=?", now(), lid);
       return hostListing(ownListing(key, lid));
     },
@@ -212,6 +223,8 @@ export function createCore(db, { notify = () => {} } = {}) {
     deleteDraft(key, lid) {
       const l = ownListing(key, lid);
       if (l.status !== "draft") throw new AppError(409, "Faqat qoralamani o‘chirish mumkin. Sotuvdagi taklifni to‘xtating");
+      run("DELETE FROM slot_rules WHERE listing_id=?", lid);
+      run("DELETE FROM views WHERE listing_id=?", lid);
       run("DELETE FROM listings WHERE id=?", lid);
       return { photo: l.photo };
     },
@@ -247,11 +260,12 @@ export function createCore(db, { notify = () => {} } = {}) {
       if (`${date}T${time}` <= clock.slice(0, 16)) throw new AppError(400, "Bu vaqt o‘tib ketgan", "past");
       if (date > addDays(clock.slice(0, 10), 365)) throw bad("Sana bir yildan uzoq");
       if (!openOn(l, date) || !l.times.includes(time)) throw new AppError(409, "Mezbon bu vaqtda ishlamaydi", "closed");
-      const guests = int(p.guests, "Mehmonlar soni", 1, l.capacity);
+      const rule = one("SELECT capacity FROM slot_rules WHERE listing_id=? AND date=? AND time=?", l.id, date, time)?.capacity ?? 0;
+      const guests = int(p.guests, "Mehmonlar soni", 1, Math.max(l.capacity, rule));
       const name = str(p.guest_name, "Ism", 80);
       const hotel = core.hotel(p.hotel_code);
       const channel = p.source === "ai" ? "ai" : hotel ? "hotel" : "web";
-      const s = split(l.price_uzs * guests, channel);
+      const s = split(l.price_uzs * guests, channel, effectivePlan({ plan: l.host_plan, plan_until: l.host_plan_until }));
       const b = { id: id("b_"), token: secret() };
       db.exec("BEGIN IMMEDIATE");
       try {
@@ -273,6 +287,7 @@ export function createCore(db, { notify = () => {} } = {}) {
         date: b.date, time: b.time, guests: b.guests, guest_name: b.guest_name, lang: b.lang, channel: b.channel, hotel: b.hotel_name,
         status: isExpired(b) ? "expired" : b.status, expires_at: b.status === "pending" ? b.expires_at : null,
         total_uzs: b.total_uzs, platform_uzs: b.platform_uzs, hotel_uzs: b.hotel_uzs, host_uzs: b.host_uzs,
+        ticket: b.status === "confirmed" ? { code: b.ticket_code, used_at: b.checked_in_at } : null,
         can_cancel: canCancel(b), can_review: canReview(b), my_rating: b.review_rating, messages: msgs(b.id),
       };
     },
@@ -308,7 +323,7 @@ export function createCore(db, { notify = () => {} } = {}) {
       const h = authHost(key);
       const b = booking("id", bid);
       if (!b || b.host_id !== h.id) throw notFound("Bron topilmadi");
-      const r = run("UPDATE bookings SET status=? WHERE id=? AND status='paid'", accept ? "confirmed" : "declined", bid);
+      const r = run("UPDATE bookings SET status=?, ticket_code=? WHERE id=? AND status='paid'", accept ? "confirmed" : "declined", accept ? newTicketCode() : null, bid);
       if (!r.changes) throw new AppError(409, "Bron holati allaqachon o‘zgargan", "state");
       return core.hostHome(key);
     },
@@ -334,7 +349,7 @@ export function createCore(db, { notify = () => {} } = {}) {
       const stamp = (d) => d.toISOString().replace(/[-:]|\.\d{3}/g, "");
       const esc = (s) => s.replace(/[\\;,]/g, "\\$&").replace(/\r?\n/g, "\\n");
       const start = startsAt(b.date, b.time), end = new Date(+start + (b.duration_min ?? 60) * 60e3);
-      return ["BEGIN:VCALENDAR", "VERSION:2.0", "PRODID:-//Mezbon AI//EN", "BEGIN:VEVENT", `UID:${b.id}@mezbon`, `DTSTAMP:${stamp(new Date())}`, `DTSTART:${stamp(start)}`, `DTEND:${stamp(end)}`,
+      return ["BEGIN:VCALENDAR", "VERSION:2.0", "PRODID:-//SilkRoad Experience OS//EN", "BEGIN:VEVENT", `UID:${b.id}@mezbon`, `DTSTAMP:${stamp(new Date())}`, `DTSTART:${stamp(start)}`, `DTEND:${stamp(end)}`,
         `SUMMARY:${esc(b.i18n[b.lang].title)}`, `LOCATION:${esc(`${b.place ?? REGIONS[b.region]}, Uzbekistan`)}`, "END:VEVENT", "END:VCALENDAR", ""].join("\r\n");
     },
 
@@ -354,6 +369,7 @@ export function createCore(db, { notify = () => {} } = {}) {
         channels: all(`SELECT channel, COUNT(*) n, SUM(total_uzs) gmv FROM bookings WHERE ${PAID} AND created_at >= ? GROUP BY channel ORDER BY n DESC`, since),
         regions: Object.keys(REGIONS).map((k) => ({ region: k, name: REGIONS[k], listings: supply[k] ?? 0, searches: byRegion[k]?.n ?? 0, unmet: byRegion[k]?.unmet ?? 0 })).sort(rank),
         categories: Object.keys(CATEGORIES).map((k) => ({ category: k, name: CATEGORIES[k].uz, searches: byCategory[k]?.n ?? 0, unmet: byCategory[k]?.unmet ?? 0 })).filter((x) => x.searches).sort(rank),
+        platform: biz.platform(),
         demoSearches: demo ? one("SELECT COUNT(*) n FROM searches WHERE demo=1 AND created_at >= ?", since).n : 0,
       };
     },
@@ -368,5 +384,6 @@ export function createCore(db, { notify = () => {} } = {}) {
       })),
     }),
   };
+  for (const k of Object.keys(biz)) if (core[k] !== biz[k]) throw new Error(`Two core functions are named ${k}`);
   return core;
 }
