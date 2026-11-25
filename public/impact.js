@@ -1,7 +1,7 @@
 // Public impact page: where travellers' money goes. Uzbek, English and Russian.
 import { api, el, GEO, store, uzs } from "/common.js";
 import { icon } from "/art.js";
-import { themePicker } from "/pwa.js";
+import { demoBanner, themePicker } from "/pwa.js";
 
 const T = {
   uz: { title: "Sayyoh puli qayerga boradi?", sub: "Har bir so‘m hisobda: qancha qismi mahalliy oilalarga yetgani shu yerda, ma’lumotlar bazasidan jonli.", sample: "Namuna ma’lumot: bu raqamlar namoyish uchun, haqiqiy daromad emas.", share: "har 100 so‘mdan mezbonga", income: "mahalliy oilalarga tushgan", hosts: "daromad olgan mezbon", perHost: "bir mezbonga o‘rtacha", outside: "poytaxtdan tashqarida qolgan", guests: "mehmon kutib olindi", langs: "tilda xizmat", map: "Hududlar bo‘yicha tashriflar", mapNote: "Sxematik xarita. Daromad faqat kamida 3 ta mezbon ishlagan hududda ko‘rsatiladi.", table: "Hudud", visits: "Tashrif", money: "Mezbonlar daromadi", few: "kam ma’lumot", how: "Qanday hisoblanadi", how1: "Faqat bo‘lib o‘tgan va puli qaytarilmagan tashriflar sanaladi.", how2: "Mezbon ulushi har bir bronda oldindan ko‘rinadi va bazada tekshiriladi: ulushlar yig‘indisi jamiga teng bo‘lmasa, bron yozilmaydi.", how3: "Ism va shaxsiy ma’lumot yo‘q, faqat jami sonlar.", now: "Hozir sotuvda", offers: "ta taklif", regions: "ta hudud", panel: "Talab paneli", here: "Ta’sir", foot: "Har bir mahalliy tajriba. Bitta raqamli platforma.", theme: ["Mavzu", "Avtomatik", "Yorug‘", "Qorong‘i"], empty: "Hali tugallangan tashrif yo‘q. Birinchi mehmonlardan keyin raqamlar shu yerda paydo bo‘ladi." },
@@ -34,4 +34,4 @@ function draw() {
         el("div.scroll", { tabindex: 0, role: "region", "aria-label": t.map }, el("table", {}, el("thead", {}, el("tr", {}, el("th", { scope: "col" }, t.table), el("th.n", { scope: "col" }, t.visits), el("th.n", { scope: "col" }, t.money))), el("tbody", {}, live.map((r) => el("tr", {}, el("td", {}, name(r.region)), el("td.n", {}, String(r.visits)), el("td.n", {}, r.income_uzs == null ? t.few : money(r.income_uzs))))))))],
     el("section.card", {}, el("h2", {}, t.how), el("ul.promise", {}, [["check", t.how1], ["shield", t.how2], ["people", t.how3]].map(([i, x]) => el("li", {}, icon(i, 26), x))), el("p.muted.small", {}, `${t.now}: ${data.supply.listings} ${t.offers}, ${data.supply.regions} ${t.regions}`))));
 }
-try { [data, cfg] = await Promise.all([api("/api/impact"), api("/api/config")]); draw(); } catch (e) { app.replaceChildren(el("div.wrap", {}, el("div.note.bad", { role: "alert" }, e.message))); }
+try { [data, cfg] = await Promise.all([api("/api/impact"), api("/api/config")]); demoBanner(cfg, "Demo"); draw(); } catch (e) { app.replaceChildren(el("div.wrap", {}, el("div.note.bad", { role: "alert" }, e.message))); }

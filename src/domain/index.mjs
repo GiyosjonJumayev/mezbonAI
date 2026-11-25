@@ -7,7 +7,9 @@ import { createBookings } from "./bookings.mjs";
 import { createCatalog } from "./catalog.mjs";
 import { createInsights } from "./insights.mjs";
 import { createMetrics } from "./metrics.mjs";
+import { createPartners } from "./partners.mjs";
 import { createPlans } from "./plans.mjs";
+import { createStage } from "./stage.mjs";
 import { createTrips } from "./trips.mjs";
 import { createPayments } from "../payments/payments.mjs";
 
@@ -35,7 +37,8 @@ export function createDomain({ db, config, fetchFn = fetch }) {
   payments = createPayments({ db, config, fetchFn, accounts, bookings, plans, audit });
   const trips = createTrips({ db, catalog, availability, bookings });
   const insights = createInsights({ db, accounts, availability, plans });
-  const metrics = createMetrics({ db, config });
+  const partners = createPartners({ db, audit }), stage = createStage({ db, accounts });
+  const metrics = createMetrics({ db, config, partners });
   const admin = createAdmin({ db, accounts, payments, audit, events, config });
 
   const core = {};
@@ -48,5 +51,5 @@ export function createDomain({ db, config, fetchFn = fetch }) {
   for (const k of Object.keys(helper)) if (k in core) throw new Error(`Two domain functions are named ${k}`);
   Object.assign(core, helper);
 
-  return { core, payments, admin, metrics, events, config, db };
+  return { core, payments, admin, metrics, partners, stage, events, config, db };
 }

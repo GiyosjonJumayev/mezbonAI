@@ -73,7 +73,8 @@ export function secureHeaders(res, config) {
   res.setHeader("X-Content-Type-Options", "nosniff");
   res.setHeader("Referrer-Policy", "no-referrer"); // booking links are secrets
   res.setHeader("Permissions-Policy", "microphone=(self), camera=(self), geolocation=(self), payment=(), usb=()");
-  res.setHeader("Content-Security-Policy", config.https ? `${CSP}; upgrade-insecure-requests` : CSP);
+  res.setHeader("Content-Security-Policy", (config.https ? `${CSP}; upgrade-insecure-requests` : CSP).replace("frame-ancestors 'none'", config.stage ? "frame-ancestors 'self'" : "frame-ancestors 'none'"));
+  if (config.demoSite) res.setHeader("X-Robots-Tag", "noindex");
   res.setHeader("Cross-Origin-Opener-Policy", "same-origin");
   res.setHeader("Cross-Origin-Resource-Policy", "same-origin");
   if (config.https) res.setHeader("Strict-Transport-Security", "max-age=31536000; includeSubDomains");

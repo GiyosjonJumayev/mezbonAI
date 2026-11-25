@@ -12,6 +12,11 @@ export function themePicker(labels) {
 
 export const worker = "serviceWorker" in navigator ? navigator.serviceWorker.register("/sw.js").catch(() => null) : Promise.resolve(null);
 
+/** Visible on every page of a public demonstration. */
+export function demoBanner(cfg, text) {
+  if (cfg.demoSite) document.querySelector("header.top").before(el("div.demobar", { role: "note" }, text));
+}
+
 let prompt = null;
 const waiting = new Set();
 addEventListener("beforeinstallprompt", (e) => { e.preventDefault(); prompt = e; waiting.forEach((f) => f()); });

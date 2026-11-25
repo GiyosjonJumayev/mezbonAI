@@ -1,4 +1,4 @@
-# SilkRoad Experience OS 6.0
+# SilkRoad Experience OS 7.0
 
 **AI-powered Tourism Business Operating System**
 
@@ -20,7 +20,13 @@ Oddiy marketplace emas. Bu mahalliy turizm bizneslarini raqamlashtiradigan, ular
    - Daromad, konversiya, eng band vaqtlar, kelmaganlar, CSV.
    - Narx taqqosi, javobsiz talab, turistlar qidirgan sanalar va tillar.
 
-## 6.0 da yangi
+## 7.0 da yangi
+
+- **Niyat xati** (`/hamkor`): usta, mehmonxona yoki hamkor xatni o‘qib, narx va rozi bo‘ladigan komissiyasi bilan imzolaydi. Ma’mur qo‘ng‘iroq qilib tasdiqlaydi, faqat tasdiqlangani sanaladi.
+- **Jonli sahna** (`/stage`): sayyoh, usta va ochiq natija bitta ekranda, haqiqatan bog‘langan. O‘zbekcha yoki inglizcha, taqdimot pulti bilan, faqat namoyishda.
+- **Ochiq namoyish**: `render.yaml` namuna ma’lumotli saytni internetga qo‘yadi. Haqiqiy to‘lov kaliti bilan ishlamaydi.
+
+## 6.0 da
 
 - **Click** to‘lovi: Octo va Payme yoniga uchinchi tizim, pul qaytarish bilan.
 - **Sayohat uchun bitta to‘lov**: bir mezbon qabul qila olmasa, faqat uning puli qaytadi.

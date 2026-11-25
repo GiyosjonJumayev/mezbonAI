@@ -7,7 +7,7 @@ export const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "
 
 export function loadConfig(env = process.env) {
   const problems = [], production = env.NODE_ENV === "production";
-  const publicUrl = (env.PUBLIC_URL || `http://localhost:${env.PORT || 4321}`).replace(/\/+$/, "");
+  const publicUrl = (env.PUBLIC_URL || env.RENDER_EXTERNAL_URL || `http://localhost:${env.PORT || 4321}`).replace(/\/+$/, "");
   let site;
   try { site = new URL(publicUrl); } catch { problems.push("PUBLIC_URL noto‘g‘ri"); site = new URL("http://localhost"); }
   const https = site.protocol === "https:";
@@ -38,7 +38,10 @@ export function loadConfig(env = process.env) {
   if (adminKey && adminKey.length < 24) problems.push("ADMIN_KEY kamida 24 belgi bo‘lsin");
   if (!env.DATABASE_URL) problems.push("DATABASE_URL yo‘q. Mahalliy baza uchun: npm run db:local");
   // Test payments must never be reachable on a real deployment by accident.
-  const testPayments = env.ALLOW_TEST_PAYMENTS === "1" || (!production && !octo && !payme && !click);
+  // A public demonstration: sample data, test payments, clearly marked. Never together with real money.
+  const demoSite = env.DEMO_SITE === "1";
+  if (demoSite && (octo || payme || click)) problems.push("DEMO_SITE va haqiqiy to‘lov birga ishlamaydi");
+  const testPayments = env.ALLOW_TEST_PAYMENTS === "1" || demoSite || (!production && !octo && !payme && !click);
   if (production) {
     if (!https) problems.push("Ishlab chiqarishda PUBLIC_URL https:// bo‘lishi shart");
     if (!adminKey) problems.push("Ishlab chiqarishda ADMIN_KEY shart");
@@ -47,7 +50,7 @@ export function loadConfig(env = process.env) {
     production, publicUrl, https, origin: site.origin, rpId: site.hostname, problems,
     databaseUrl: env.DATABASE_URL, migrateUrl: env.MIGRATE_URL || env.DATABASE_URL, dbSsl: env.DATABASE_SSL === "1" ? { rejectUnauthorized: true } : undefined,
     port: Number(env.PORT) || 4321, host: env.HOST || "127.0.0.1", trustProxy: env.TRUST_PROXY === "1",
-    dataDir: env.MEZBON_DATA || path.join(ROOT, "data"), seed: env.SEED !== "0" && !production, usdRate: Number(env.USD_RATE) || null,
+    dataDir: env.MEZBON_DATA || path.join(ROOT, "data"), seed: demoSite || (env.SEED !== "0" && !production), demoSite, stage: demoSite || (!production && testPayments), usdRate: Number(env.USD_RATE) || null,
     octo, payme, click, fiscal, testPayments, adminKey, adminTotp, mail,
     telegramToken: env.TELEGRAM_BOT_TOKEN || null, pushContact: env.PUSH_CONTACT || (https ? publicUrl : "mailto:noreply@example.com"),
     retentionDays: Math.max(30, Number(env.RETENTION_DAYS) || 365),

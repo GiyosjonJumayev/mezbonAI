@@ -5,7 +5,9 @@ import { CATEGORIES, LANGS, REGIONS } from "../lib/i18n.mjs";
 import { bad, fail, id, int, isDate, known, lang, notFound, str } from "../lib/util.mjs";
 
 export const MAX_PHOTOS = 6;
-export const ON_SALE = "l.status='published' AND h.suspended_at IS NULL";
+const OPEN = "l.status='published' AND h.suspended_at IS NULL";
+/** Shown to everyone. A listing can also be open by its link only. */
+export const ON_SALE = `${OPEN} AND NOT l.unlisted`;
 const LISTING = `SELECT l.*, h.name host_name, h.demo host_demo, h.type host_type, h.plan host_plan, h.plan_until host_plan_until, h.verified_at host_verified,
   (SELECT AVG(rating) FROM reviews WHERE listing_id=l.id AND hidden_at IS NULL) rating, (SELECT COUNT(*) FROM reviews WHERE listing_id=l.id AND hidden_at IS NULL) review_count,
   (SELECT COALESCE(SUM(guests),0) FROM bookings WHERE listing_id=l.id AND checked_in_at IS NOT NULL) hosted
@@ -28,7 +30,7 @@ export function createCatalog({ db, accounts, plans }) {
     return l;
   }
   async function published(lid) {
-    const l = await db.one(`${LISTING} WHERE l.id=? AND ${ON_SALE}`, String(lid ?? ""));
+    const l = await db.one(`${LISTING} WHERE l.id=? AND ${OPEN}`, String(lid ?? ""));
     if (!l) throw notFound("Taklif topilmadi");
     return l;
   }

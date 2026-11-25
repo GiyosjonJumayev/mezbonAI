@@ -15,6 +15,8 @@ Please report a vulnerability privately through GitHub: **Security → Report a 
 | Forged payment | Octo's notification is never believed: the server asks Octo. Click's calls must carry its signature. Payme must present its key; its addresses can be enforced with `PAYME_CHECK_IP=1`. Amounts and ids must match. |
 | Stranger at the door | A host's exact address and phone are shown only to a guest whose booking is confirmed. A guest's phone is shown only to their host, and the e-mail to nobody. |
 | Reading one host's income | Public impact figures need at least three earning hosts. |
+| Contacts in letters of intent | Seen only by an administrator. Withdrawing a letter erases the phone and e-mail at once; the letter with its name is deleted 90 days later. The exact signed text is kept with its SHA-256 hash. |
+| Our pages inside another site | Framing is refused. A demonstration may frame only itself, for the live stage. |
 | Guessing who has an account | Sign-in and "find my booking" by e-mail give the same answer for every address. |
 | Double sale, double payment, double refund | Row locks, unique constraints and idempotent steps, tested with simultaneous requests. |
 | Insider or leaked server account | The server's database account cannot change tables or rewrite the audit log. A trigger stops even the owner from editing it. |
@@ -37,4 +39,5 @@ Please report a vulnerability privately through GitHub: **Security → Report a 
 - A booking link opens the booking for whoever has it, like a paper ticket.
 - Click signs its calls with MD5 and SHA-1, because its protocol requires it.
 - Rate limits are kept in memory and reset when the server restarts.
+- The live stage creates a temporary provider for anyone who opens it. It exists only with test payments, is limited per address, stays out of search and is deleted after a day.
 - No independent penetration test has been done.

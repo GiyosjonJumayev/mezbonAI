@@ -2,12 +2,13 @@ import { act, api, ask, copy, el, listen, plate, som, store, tint, toast, visual
 import { account, enter, keyCard, passkeyLogin, passkeys } from "/account.js";
 import { assistant, forget } from "/assistant.js";
 import { icon } from "/art.js";
-import { installButton, themePicker } from "/pwa.js";
+import { demoBanner, installButton, themePicker } from "/pwa.js";
 import { analytics, calendar, market, PLAN_NAME, plans, tickets } from "/studio.js";
 
 const app = document.getElementById("app");
 let cfg;
 try { cfg = await api("/api/config"); } catch (e) { app.replaceChildren(el("div.wrap", {}, el("div.note.bad", { role: "alert" }, e.message))); throw e; }
+demoBanner(cfg, "Namoyish sayti: ma’lumotlar namuna, pul yechilmaydi.");
 document.getElementById("mode").textContent = cfg.ai ? "Matn va tarjima: Claude AI" : "Demo rejim: matn shablondan olinadi, erkin yozishma tarjima qilinmaydi";
 
 document.getElementById("prefs").append(installButton("Ilovani o‘rnatish"), themePicker({ theme: "Mavzu", auto: "Avtomatik", light: "Yorug‘", dark: "Qorong‘i" }), el("a", { href: "/" }, "Sayt"), el("a", { href: "/panel" }, "Talab paneli"), el("a", { href: "/qr" }, "QR kodlar"));
@@ -57,7 +58,8 @@ function welcome() {
     } }, el("h2", {}, "Kabinet ochish"), el("label", {}, "Ismingiz yoki biznes nomi", name), el("label", {}, "Faoliyatingiz", type), btn, el("p.small.muted.or", {}, "Avval ochganmisiz?"),
       passkeys() && el("button", { type: "button", onclick: act(async () => { await passkeyLogin(); await start(); }) }, icon("key", 20), "Passkey bilan kirish"),
       cfg.mail && mailLogin(),
-      el("p.small.muted", {}, "Yoki zaxira kirish havolangizni shu qurilmada oching. Telegram botdan kirish havolasi: /kirish"))));
+      el("p.small.muted", {}, "Yoki zaxira kirish havolangizni shu qurilmada oching. Telegram botdan kirish havolasi: /kirish"),
+      el("p.small", {}, "Hali tayyor emasmisiz? ", el("a", { href: "/hamkor" }, "Niyat xati imzolang")))));
 }
 
 function mailLogin() {
