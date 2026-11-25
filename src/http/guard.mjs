@@ -72,7 +72,7 @@ const CSP = "default-src 'self'; img-src 'self' data: blob:; style-src 'self'; s
 export function secureHeaders(res, config) {
   res.setHeader("X-Content-Type-Options", "nosniff");
   res.setHeader("Referrer-Policy", "no-referrer"); // booking links are secrets
-  res.setHeader("Permissions-Policy", "microphone=(self), camera=(self), geolocation=(), payment=(), usb=()");
+  res.setHeader("Permissions-Policy", "microphone=(self), camera=(self), geolocation=(self), payment=(), usb=()");
   res.setHeader("Content-Security-Policy", config.https ? `${CSP}; upgrade-insecure-requests` : CSP);
   res.setHeader("Cross-Origin-Opener-Policy", "same-origin");
   res.setHeader("Cross-Origin-Resource-Policy", "same-origin");

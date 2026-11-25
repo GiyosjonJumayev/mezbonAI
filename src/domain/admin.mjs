@@ -1,17 +1,22 @@
 // Platform administration: verification, moderation, refunds, payouts, audit trail and data retention.
 import { createHmac, randomBytes, timingSafeEqual } from "node:crypto";
 import { asHost } from "./accounts.mjs";
+import { totpChecker } from "../lib/totp.mjs";
 import { ago, DAY, fail, notFound, safeEqual, today, addDays } from "../lib/util.mjs";
 
 const SESSION_HOURS = 8;
 
 /** Signed, self-expiring administrator sessions. Changing ADMIN_KEY ends all of them. */
-export function adminSessions(adminKey) {
-  const sign = (s) => createHmac("sha256", `admin-session:${adminKey}`).update(s).digest("base64url");
+export function adminSessions(adminKey, totpSecret) {
+  const code = totpSecret && totpChecker(totpSecret);
+  const sign = (s) => createHmac("sha256", `admin-session:${adminKey}:${totpSecret ?? ""}`).update(s).digest("base64url");
   return {
     maxAge: SESSION_HOURS * 3600,
-    open(key) {
-      if (!adminKey || typeof key !== "string" || !safeEqual(key, adminKey)) throw fail(401, "Ma’muriyat kaliti noto‘g‘ri", "auth");
+    twoStep: Boolean(code),
+    open(key, otp) {
+      const right = Boolean(adminKey) && typeof key === "string" && safeEqual(key, adminKey);
+      // The same answer for a wrong key and a wrong code, and a code is only spent when the key is right.
+      if (!right || (code && !code(otp))) throw fail(401, code ? "Kalit yoki kod noto‘g‘ri" : "Ma’muriyat kaliti noto‘g‘ri", "auth");
       const body = `${Date.now() + SESSION_HOURS * 3600e3}.${randomBytes(9).toString("base64url")}`;
       return `${body}.${sign(body)}`;
     },
@@ -78,7 +83,7 @@ export function createAdmin({ db, accounts, payments, audit, events, config }) {
     async retention() {
       const cut = addDays(today(), -config.retentionDays);
       return db.tx(async () => {
-        const rows = await db.all("UPDATE bookings SET guest_name='—', anonymized_at=now() WHERE anonymized_at IS NULL AND date < ? AND status NOT IN ('paid') RETURNING id", cut);
+        const rows = await db.all("UPDATE bookings SET guest_name='—', guest_email=NULL, guest_phone=NULL, anonymized_at=now() WHERE anonymized_at IS NULL AND date < ? AND status NOT IN ('paid') RETURNING id", cut);
         if (!rows.length) return 0;
         const ids = rows.map((r) => r.id);
         await db.run("UPDATE trips t SET guest_name='—' WHERE NOT EXISTS (SELECT 1 FROM bookings b WHERE b.trip_id=t.id AND b.anonymized_at IS NULL)");
@@ -91,7 +96,7 @@ export function createAdmin({ db, accounts, payments, audit, events, config }) {
     cleanup: async () => {
       await accounts.cleanAccounts();
       // Holds that were never paid and have no bill are only clutter.
-      await db.run("DELETE FROM bookings b WHERE b.status='pending' AND b.expires_at < ? AND NOT EXISTS (SELECT 1 FROM payments p WHERE p.kind='booking' AND p.ref=b.id)", ago(7 * DAY));
+      await db.run("DELETE FROM bookings b WHERE b.status='pending' AND b.expires_at < ? AND NOT EXISTS (SELECT 1 FROM payment_items i WHERE i.booking_id=b.id)", ago(7 * DAY));
       await db.run("DELETE FROM trips t WHERE created_at < ? AND NOT EXISTS (SELECT 1 FROM bookings b WHERE b.trip_id=t.id)", ago(8 * DAY));
     },
   };

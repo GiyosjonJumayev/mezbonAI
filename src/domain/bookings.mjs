@@ -3,6 +3,7 @@ import { randomBytes } from "node:crypto";
 import { translate } from "../ai/claude.mjs";
 import { REGIONS } from "../lib/i18n.mjs";
 import { bad, fail, id, int, lang, notFound, secret, startsAt, str, tashkentNow, today } from "../lib/util.mjs";
+import { cleanEmail, cleanPhone } from "./mail.mjs";
 import { hostListing } from "./catalog.mjs";
 import { effectivePlan, split } from "./plans.mjs";
 
@@ -20,14 +21,14 @@ function ics(list) {
   const esc = (s) => s.replace(/[\\;,]/g, "\\$&").replace(/\r?\n/g, "\\n");
   const event = (b) => {
     const start = startsAt(b.date, b.time), end = new Date(+start + (b.duration_min ?? 60) * 60e3);
-    return ["BEGIN:VEVENT", `UID:${b.id}@mezbon`, `DTSTAMP:${stamp(new Date())}`, `DTSTART:${stamp(start)}`, `DTEND:${stamp(end)}`, `SUMMARY:${esc(b.summary)}`, `LOCATION:${esc(`${b.place ?? REGIONS[b.region]}, Uzbekistan`)}`, "END:VEVENT"];
+    return ["BEGIN:VEVENT", `UID:${b.id}@mezbon`, `DTSTAMP:${stamp(new Date())}`, `DTSTART:${stamp(start)}`, `DTEND:${stamp(end)}`, `SUMMARY:${esc(b.summary)}`, `LOCATION:${esc([b.status === "confirmed" && b.address, b.place ?? REGIONS[b.region], "Uzbekistan"].filter(Boolean).join(", "))}`, "END:VEVENT"];
   };
   return ["BEGIN:VCALENDAR", "VERSION:2.0", "PRODID:-//SilkRoad Experience OS//EN", ...list.flatMap(event), "END:VCALENDAR", ""].join("\r\n");
 }
 
 export function createBookings({ db, events, accounts, catalog, availability, plans, refunds }) {
-  const BOOKING = `SELECT b.*, l.host_id, l.i18n, l.place, l.region, l.category, l.photos->>0 photo, l.duration_min, ho.name hotel_name, r.rating review_rating, tr.token trip_token
-    FROM bookings b JOIN listings l ON l.id=b.listing_id LEFT JOIN hotels ho ON ho.code=b.hotel_code LEFT JOIN reviews r ON r.booking_id=b.id LEFT JOIN trips tr ON tr.id=b.trip_id`;
+  const BOOKING = `SELECT b.*, l.host_id, l.i18n, l.place, l.region, l.category, l.photos->>0 photo, l.duration_min, l.address, l.lat, l.lng, h.name host_name, h.phone host_phone, h.email host_email, ho.name hotel_name, r.rating review_rating, tr.token trip_token
+    FROM bookings b JOIN listings l ON l.id=b.listing_id JOIN hosts h ON h.id=l.host_id LEFT JOIN hotels ho ON ho.code=b.hotel_code LEFT JOIN reviews r ON r.booking_id=b.id LEFT JOIN trips tr ON tr.id=b.trip_id`;
   const byId = (bid) => db.one(`${BOOKING} WHERE b.id=?`, String(bid ?? ""));
   async function guestOwn(token) {
     const b = typeof token === "string" ? await db.one(`${BOOKING} WHERE b.token=?`, token) : null;
@@ -47,7 +48,7 @@ export function createBookings({ db, events, accounts, catalog, availability, pl
     byId,
     async hostHome(credential) {
       const h = await accounts.authHost(credential);
-      const rows = await db.all(`SELECT b.id, b.date, b.time, b.guests, b.guest_name, b.lang, b.channel, b.status, b.host_uzs, b.total_uzs, b.created_at, b.checked_in_at, b.moved_at, b.decide_by, l.i18n->'uz'->>'title' title, l.id listing_id
+      const rows = await db.all(`SELECT b.id, b.date, b.time, b.guests, b.guest_name, b.lang, b.channel, b.status, b.host_uzs, b.total_uzs, b.created_at, b.checked_in_at, b.moved_at, b.decide_by, CASE WHEN b.status IN ('paid','confirmed') THEN b.guest_phone END guest_phone, l.i18n->'uz'->>'title' title, l.id listing_id
         FROM bookings b JOIN listings l ON l.id=b.listing_id WHERE l.host_id=? AND b.status<>'pending' AND NOT (b.status='cancelled' AND b.expires_at IS NOT NULL)
         ORDER BY b.status='paid' DESC, (b.date >= ?) DESC, b.date, b.time LIMIT 100`, h.id, today());
       const sums = await db.one(`SELECT COALESCE(SUM(b.host_uzs) FILTER (WHERE b.status='confirmed'),0) earned, COALESCE(SUM(b.guests) FILTER (WHERE b.status='confirmed'),0) guests, COUNT(*) FILTER (WHERE b.status='paid') waiting
@@ -66,7 +67,7 @@ export function createBookings({ db, events, accounts, catalog, availability, pl
       const l = await catalog.published(p.listing_id), { date } = p, time = String(p.time ?? "");
       availability.check(l, date, time);
       const guests = int(p.guests, "Mehmonlar soni", 1, 100);
-      const name = str(p.guest_name, "Ism", 80);
+      const name = str(p.guest_name, "Ism", 80), email = cleanEmail(p.email), phone = cleanPhone(p.phone);
       const hotel = await catalog.hotel(p.hotel_code);
       const channel = p.source === "ai" ? "ai" : hotel ? "hotel" : "web";
       const b = { id: id("b_"), token: secret() };
@@ -78,10 +79,10 @@ export function createBookings({ db, events, accounts, catalog, availability, pl
         int(guests, "Mehmonlar soni", 1, Math.max(fresh.capacity, rule));
         if ((await availability.free(fresh, date, time)) < guests) throw fail(409, "Bu vaqtda joy yetarli emas", "full");
         const s = split(fresh.price_uzs * guests, channel, effectivePlan({ plan: fresh.host_plan, plan_until: fresh.host_plan_until }));
-        await db.run(`INSERT INTO bookings (id,token,listing_id,date,time,guests,guest_name,lang,channel,hotel_code,status,total_uzs,platform_uzs,hotel_uzs,host_uzs,expires_at,trip_id)
-          VALUES (?,?,?,?,?,?,?,?,?,?,'pending',?,?,?,?,?,?)`,
+        await db.run(`INSERT INTO bookings (id,token,listing_id,date,time,guests,guest_name,lang,channel,hotel_code,status,total_uzs,platform_uzs,hotel_uzs,host_uzs,expires_at,trip_id,guest_email,guest_phone)
+          VALUES (?,?,?,?,?,?,?,?,?,?,'pending',?,?,?,?,?,?,?,?)`,
           b.id, b.token, l.id, date, time, guests, name, lang(p.lang), channel, channel === "hotel" ? hotel.code : null,
-          s.total, s.platform, s.hotel, s.host, new Date(Date.now() + HOLD_MIN * 60e3).toISOString(), p.trip_id ?? null);
+          s.total, s.platform, s.hotel, s.host, new Date(Date.now() + HOLD_MIN * 60e3).toISOString(), p.trip_id ?? null, email, phone);
       });
       return api.guestBooking(b.token);
     },
@@ -94,6 +95,9 @@ export function createBookings({ db, events, accounts, catalog, availability, pl
         date: b.date, time: b.time, guests: b.guests, guest_name: b.guest_name, lang: b.lang, channel: b.channel, hotel: b.hotel_name,
         status: isExpired(b) ? "expired" : b.status, expires_at: b.status === "pending" ? b.expires_at : null, decide_by: b.status === "paid" ? b.decide_by : null,
         total_uzs: b.total_uzs, platform_uzs: b.platform_uzs, hotel_uzs: b.hotel_uzs, host_uzs: b.host_uzs,
+        has_email: Boolean(b.guest_email),
+        // The door and the phone number are for guests who are really coming.
+        meet: b.status === "confirmed" ? { host: b.host_name, address: b.address, phone: b.host_phone, lat: b.lat, lng: b.lng } : null,
         ticket: b.status === "confirmed" ? { code: b.ticket_code, used_at: b.checked_in_at } : null,
         can_cancel: canCancel(b), can_move: b.status !== "pending" && canCancel(b), can_review: Boolean(canReview(b)), my_rating: b.review_rating,
         payment: await refunds.summary(b.id), messages: await msgs(b.id),
@@ -108,6 +112,7 @@ export function createBookings({ db, events, accounts, catalog, availability, pl
         const r = await db.run("UPDATE bookings SET status='cancelled' WHERE id=? AND status=? AND checked_in_at IS NULL", b.id, b.status);
         if (!r.changes) throw fail(409, "Bron holati o‘zgargan", "state");
         if (b.status === "pending") return;
+        toGuest(b, "cancelled");
         await refunds.refundBooking(b.id, "Mehmon bekor qildi");
         toHost(b, "cancelled");
       });
@@ -249,8 +254,10 @@ export function createBookings({ db, events, accounts, catalog, availability, pl
       if (b.status !== "pending" || (isExpired(b) && !(await canRevive(b)))) return "late";
       await db.run("UPDATE bookings SET status='paid', expires_at=NULL, decide_by=?, asked_at=now() WHERE id=?", decideBy(b.date, b.time), bid);
       toHost(b, "booking");
+      toGuest(b, "paid");
       return "paid";
     },
+    tellGuest: async (bid, type) => { const b = await byId(bid); if (b) toGuest(b, type); },
     /** A refund started in the payment company's cabinet is allowed until the visit. */
     async canRefund(bid) {
       const b = await byId(bid);

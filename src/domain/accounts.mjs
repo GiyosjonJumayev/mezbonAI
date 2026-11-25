@@ -1,6 +1,7 @@
 // Provider accounts: access keys, sessions, one-time links and passkeys. Only hashes of secrets are stored.
 import { generateAuthenticationOptions, generateRegistrationOptions, verifyAuthenticationResponse, verifyRegistrationResponse } from "@simplewebauthn/server";
 import { PROVIDER_TYPES } from "../lib/i18n.mjs";
+import { cleanEmail, cleanPhone } from "./mail.mjs";
 import { ago, bad, DAY, fail, id, known, secret, sha256, str } from "../lib/util.mjs";
 
 const SESSION_DAYS = 30, CHALLENGE_MIN = 5, LINK_MIN = 15, MAX_PASSKEYS = 10;
@@ -70,6 +71,7 @@ export function createAccounts({ db, audit, site }) {
       await db.tx(async () => {
         await db.run("UPDATE hosts SET key_hash=?, calendar_hash=NULL WHERE id=?", sha256(key), h.id);
         await db.run("DELETE FROM sessions WHERE host_id=?", h.id);
+        await db.run("DELETE FROM challenges WHERE host_id=?", h.id); // links already on their way stop working too
         await audit(h.id, "key_rotated", h.id);
       });
       return { key };
@@ -98,10 +100,32 @@ export function createAccounts({ db, audit, site }) {
       if (!h) throw denied();
       return h;
     },
+    async setContact(credential, { phone }) {
+      const h = await authHost(credential);
+      await db.run("UPDATE hosts SET phone=? WHERE id=?", cleanPhone(phone), h.id);
+      return { ok: true };
+    },
+    /** An address counts only after its owner opened the link sent to it. An empty one removes it. */
+    async askEmail(credential, value) {
+      const h = await authHost(credential), email = cleanEmail(value);
+      if (!email) { await db.run("UPDATE hosts SET email=NULL WHERE id=?", h.id); return {}; }
+      const token = "e_" + secret();
+      await db.run("INSERT INTO challenges (id,challenge,host_id,expires_at) VALUES (?,?,?,?)", sha256(token).toString("hex"), `email:${email}`, h.id, future(3600e3));
+      return { email, token };
+    },
+    async confirmEmail(token) {
+      const c = typeof token === "string" && token.startsWith("e_") ? await spend(sha256(token).toString("hex")) : null;
+      if (!c?.challenge.startsWith("email:")) throw denied();
+      const email = c.challenge.slice(6);
+      try { await db.run("UPDATE hosts SET email=? WHERE id=?", email, c.host_id); } catch (e) { if (e.code === "23505") throw fail(409, "Bu email boshqa kabinetga ulangan"); throw e; }
+      await audit(c.host_id, "email_confirmed", c.host_id);
+      return { ok: true };
+    },
+    hostByEmail: (email) => db.one("SELECT id, email FROM hosts WHERE lower(email)=lower(?)", email),
     async account(credential) {
       const h = await authHost(credential);
       return {
-        id: h.id, name: h.name, type: h.type, verified: Boolean(h.verified_at), suspended: Boolean(h.suspended_at), telegram: Boolean(h.telegram_chat), calendar: Boolean(h.calendar_hash),
+        id: h.id, name: h.name, type: h.type, verified: Boolean(h.verified_at), suspended: Boolean(h.suspended_at), telegram: Boolean(h.telegram_chat), calendar: Boolean(h.calendar_hash), phone: h.phone, email: h.email,
         sessions: await db.all("SELECT label, created_at FROM sessions WHERE host_id=? AND expires_at > now() ORDER BY created_at DESC", h.id),
         passkeys: await db.all("SELECT id, created_at FROM passkeys WHERE host_id=? ORDER BY created_at", h.id),
       };
@@ -120,7 +144,7 @@ export function createAccounts({ db, audit, site }) {
     },
     async passkeyRegister(credential, body) {
       const h = await authHost(credential), c = await spend(body?.id);
-      if (!c || c.host_id !== h.id) throw passkeyFailed();
+      if (!c || c.host_id !== h.id || c.challenge.startsWith("email:")) throw passkeyFailed();
       let v;
       try { v = await verifyRegistrationResponse({ response: body.response, expectedChallenge: c.challenge, expectedOrigin: site.origin, expectedRPID: site.rpId, requireUserVerification: true }); } catch { throw passkeyFailed(); }
       if (!v.verified) throw passkeyFailed();

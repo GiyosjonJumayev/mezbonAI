@@ -38,7 +38,14 @@ export const store = {
 
 const group = (n) => Math.round(n).toString().replace(/\B(?=(\d{3})+$)/g, " ");
 export const som = (n) => `${group(n)} so‘m`;
-export const uzs = (n, lang, rate) => (lang === "uz" ? som(n) : `${group(n)} UZS`) + (rate ? ` (≈ $${Math.round(n / rate)})` : "");
+/** `fx` is { code, rate } of the currency the visitor chose; the real price is always in so'm. */
+export function uzs(n, lang, fx) {
+  const real = lang === "uz" ? som(n) : `${group(n)} UZS`;
+  if (!fx) return real;
+  let about;
+  try { about = new Intl.NumberFormat(lang, { style: "currency", currency: fx.code, maximumFractionDigits: n / fx.rate < 10 ? 2 : 0 }).format(n / fx.rate); } catch { about = `${Math.round(n / fx.rate)} ${fx.code}`; }
+  return `${real} (≈ ${about})`;
+}
 
 export function toast(text, bad) {
   let box = document.querySelector(".toasts");
@@ -141,4 +148,4 @@ export const visual = (l, alt = "") => (l.photo ? el("img.photo", { src: `/photo
 export const tint = () => null;
 
 /** Brand names, so they need no translation. Test payments have their own wording. */
-export const PAY_NAME = { octo: "Visa, Mastercard, Uzcard, Humo (Octo)", payme: "Payme" };
+export const PAY_NAME = { octo: "Visa, Mastercard, Uzcard, Humo (Octo)", click: "Click", payme: "Payme" };

@@ -109,7 +109,7 @@ test("declining or cancelling in time returns the money once, even when an answe
   assert.equal((await core.guestBooking(b.token)).payment.status, "refund_due");
   await payments.work();
   assert.equal(refunds().length, 2, "no second attempt within a minute");
-  await db.run("UPDATE payments SET updated_at = now() - interval '2 minutes'");
+  await db.run("UPDATE refunds SET updated_at = now() - interval '2 minutes'");
   await payments.work();
   assert.deepEqual([(await core.guestBooking(b.token)).payment.status, refunds().length], ["refunded", 2], "it looks before refunding again");
   const c = await pay({ date: day(5) });
@@ -338,5 +338,7 @@ test("payouts: only delivered visits count, never more than the balance, never t
   const b = await live.book();
   await live.db.run("UPDATE bookings SET status='confirmed', ticket_code='ABC', checked_in_at=now() WHERE token=?", b.token);
   await live.db.run("INSERT INTO payments (id,kind,ref,provider,amount_uzs,status) VALUES ('p_t','booking',?,'test',300000,'paid')", await live.core.bookingId(b.token));
+  await live.db.run("UPDATE payments SET paid_at=now()");
+  await live.db.run("INSERT INTO payment_items (payment_id,booking_id,amount_uzs) VALUES ('p_t',?,300000)", await live.core.bookingId(b.token));
   assert.equal((await live.payments.balance(live.host.id)).available, 0);
 });

@@ -1,5 +1,5 @@
 // Trip planner and trip page. `ctx` carries the shared helpers of the traveller app.
-import { api, el, store, toast, visual } from "/common.js";
+import { PAY_NAME, api, el, store, toast, visual } from "/common.js";
 import { icon } from "/art.js";
 
 /** Remembers the form while the traveller looks at one experience and comes back. */
@@ -9,7 +9,7 @@ let touched = null;
 const auto = new Set();
 
 export function planner(ctx, id) {
-  const { t, cfg, lang, run, money, longDate, regionName, placeOf, link, page, back, alive, go, why, hotel, addDays, today } = ctx;
+  const { t, cfg, lang, run, money, longDate, regionName, placeOf, link, page, back, alive, go, why, hotel, addDays, today, contactFields } = ctx;
   form ??= { from: addDays(today(), 3), days: 3, guests: 2, pace: "full", budget: "", wish: "", regions: new Set(), interests: new Set() };
   touched ??= new Set();
   const out = el("div.stack", { style: "gap:26px", "aria-live": "polite" });
@@ -41,13 +41,14 @@ export function planner(ctx, id) {
     const count = plan.days.reduce((s, d) => s + d.items.length, 0);
     if (!count) return out.replaceChildren(el("div.note.warn", { role: "status" }, t("tripNone")));
     const name = el("input", { maxlength: 80, autocomplete: "name", required: true, value: store.get("name") ?? "" });
+    const contact = contactFields();
     const total = plan.days.flatMap((d) => d.items).reduce((s, x) => s + x.price_uzs, 0) * plan.asked.guests;
     let before = null;
     out.replaceChildren(
       el("ol.route", {}, plan.days.map((d, n) => {
         const moved = before && before !== d.region;
         before = d.region;
-        return el("li", {}, el("div.row.between", {}, el("h2", {}, `${lang === "zh" ? `第${n + 1}天` : lang === "ko" || lang === "ja" ? `${n + 1}${t("tripDay")}` : `${t("tripDay")} ${n + 1}`}`), el("span.muted", {}, `${longDate(d.date)} · ${regionName(d.region)}`)),
+        return el("li", {}, el("div.row.between", {}, el("h2", {}, `${lang === "zh" ? `第${n + 1}天` : lang === "ko" || lang === "ja" ? `${n + 1}${t("tripDay")}` : lang === "uz" ? `${n + 1}-kun` : lang === "tr" ? `${n + 1}. ${t("tripDay")}` : `${t("tripDay")} ${n + 1}`}`), el("span.muted", {}, `${longDate(d.date)} · ${regionName(d.region)}`)),
           moved && el("p.small.travel", {}, icon("route", 18), `${t("tripMove")} ${regionName(d.region)}`),
           d.items.length ? d.items.map((x) => el("article.stop", {}, el("div.art", {}, visual({ ...x, id: x.listing_id }), x.demo && el("span.badge", {}, t("sample"))),
             el("div.stack", { style: "gap:5px" }, el("b", { dir: "ltr", style: "justify-self:start" }, x.time), el("h3", {}, x.i18n[lang].title), el("p.small.muted", {}, `${x.host} · ${placeOf(x)} · ${x.duration_min} ${t("minutes")}`), el("span.price", {}, money(x.price_uzs), " ", el("small", {}, t("perPerson"))),
@@ -55,11 +56,11 @@ export function planner(ctx, id) {
                 el("button.ghost.mini.text", { type: "button", "aria-label": `${t("remove")}: ${x.i18n[lang].title}`, onclick: () => { d.items = d.items.filter((y) => y !== x); show(); } }, t("remove"))))))
             : el("p.muted", {}, t("tripFree")));
       })),
-      el("form.card", { onsubmit: (e) => { e.preventDefault(); reserve({ currentTarget: e.submitter }); } }, el("dl.sum", {}, el("dt.all", {}, `${t("total")} (${count} × ${plan.asked.guests})`), el("dd.all", {}, money(total))), el("label", {}, t("name"), name), el("button.primary.wide", { type: "submit" }, t("tripHold")), el("p.small.muted", {}, t("tripAll"))));
+      el("form.card", { onsubmit: (e) => { e.preventDefault(); reserve({ currentTarget: e.submitter }); } }, el("dl.sum", {}, el("dt.all", {}, `${t("total")} (${count} × ${plan.asked.guests})`), el("dd.all", {}, money(total))), el("label", {}, t("name"), name), contact.node, el("button.primary.wide", { type: "submit" }, t("tripHold")), el("p.small.muted", {}, t("tripAll"))));
     const reserve = run(async () => {
       store.set("name", name.value.trim());
       try {
-        const trip = await api("/api/trips", { guests: plan.asked.guests, guest_name: name.value, lang, hotel_code: hotel?.code, items: plan.days.flatMap((d) => d.items.map((x) => ({ listing_id: x.listing_id, date: d.date, time: x.time }))) });
+        const trip = await api("/api/trips", { guests: plan.asked.guests, guest_name: name.value, ...contact.value(), lang, hotel_code: hotel?.code, items: plan.days.flatMap((d) => d.items.map((x) => ({ listing_id: x.listing_id, date: d.date, time: x.time }))) });
         store.set("trips", JSON.stringify([trip.token, ...store.json("trips", [])].slice(0, 10)));
         store.set("bookings", JSON.stringify([...trip.bookings.map((b) => b.token), ...store.json("bookings", [])].slice(0, 40)));
         plan = null;
@@ -81,15 +82,21 @@ export function planner(ctx, id) {
 }
 
 export async function tripPage(ctx, id, token) {
-  const { t, lang, money, longDate, placeOf, link, page, alive, copy, every } = ctx;
+  const { t, lang, run, money, longDate, placeOf, link, page, alive, copy, every } = ctx;
   let last = "";
   const load = async () => {
-    const trip = await api(`/api/trips/${encodeURIComponent(token)}`), sig = JSON.stringify(trip);
+    let trip = await api(`/api/trips/${encodeURIComponent(token)}`);
+    if (!last && trip.bookings.some((b) => b.status === "pending" && b.payment?.provider === "octo")) trip = await api(`/api/trips/${encodeURIComponent(token)}/refresh`, {}).catch(() => trip);
+    const sig = JSON.stringify(trip);
     if (!alive(id) || sig === last) return;
     last = sig;
     const tone = (s) => ({ confirmed: ".ok", declined: ".bad", expired: ".bad", cancelled: ".bad", pending: ".warn" })[s] ?? "";
     page(link({ my: 1 }, "a.back", {}, t("myBookings")), el("div.row.between", {}, el("h1", {}, t("tripMine")), el("button", { onclick: async () => { if (await copy(`${location.origin}/?trip=${trip.token}`)) toast(t("copied")); } }, icon("share", 20), t("copyLink"))),
       trip.waiting > 0 && el("div.note.warn", { role: "status" }, `${trip.waiting} ${t("tripLeft")}`),
+      trip.waiting > 1 && trip.payMethods.length > 0 && el("fieldset.pay", {}, el("legend", {}, `${t("payTrip")}: ${money(trip.bookings.filter((b) => b.status === "pending").reduce((s, b) => s + b.total_uzs, 0))}`), trip.payMethods.map((method, n) => el("button" + (n ? "" : ".primary") + ".wide", { type: "button", onclick: run(async () => {
+        const r = await api(`/api/trips/${trip.token}/pay`, { method });
+        if (r.url) location.href = r.url; else await load();
+      }) }, PAY_NAME[method] ? [icon("wallet", 20), PAY_NAME[method]] : t("pay"))), el("p.small.muted", {}, t("payTripNote"))),
       el("ol.route", {}, trip.bookings.map((b) => el("li", {}, el("div.row.between", {}, el("h2", {}, longDate(b.date)), el("span.badge" + tone(b.status), {}, t(b.status))),
         el("article.stop", {}, el("div.art", {}, visual({ ...b, id: b.listing_id })), el("div.stack", { style: "gap:5px" }, el("b", { dir: "ltr", style: "justify-self:start" }, b.time), el("h3", {}, b.i18n[lang].title), el("p.small.muted", {}, placeOf(b)), el("span.price", {}, money(b.total_uzs)),
           el("div", {}, link({ b: b.token }, "a.btn" + (b.status === "pending" ? ".primary" : ""), {}, t(b.status === "pending" ? "tripOpen" : "open")))))))),

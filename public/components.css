@@ -76,6 +76,17 @@ ul.plain { list-style: none; padding: 0; display: grid; gap: 10px; }
 ul.plain li + li { border-block-start: 1px solid var(--line); padding-block-start: 10px; }
 .or { border-block-start: 1px solid var(--line); padding-block-start: 14px; }
 
+.sum.wide { width: 100%; text-align: start; }
+/* Impact and investor numbers */
+.tiles.three { grid-template-columns: repeat(auto-fit, minmax(min(100%, 280px), 1fr)); }
+.tile b { overflow-wrap: anywhere; }
+.bigshare { gap: 18px; }
+.bigshare .huge { font-size: clamp(3.4rem, 9vw, 6rem); line-height: 1; letter-spacing: -.04em; color: var(--turq); }
+.sharebar { height: 18px; border-radius: 99px; background: var(--soft); overflow: hidden; }
+.sharebar i { display: block; height: 100%; background: var(--turq); }
+ol.funnel { list-style: none; padding: 0; display: grid; gap: 12px; }
+td .meter { margin-block-start: 6px; min-width: 90px; }
+
 /* Assistant */
 .pillars { display: grid; gap: 14px; }
 .pillars section { border-inline-start: 4px solid var(--turq); padding-inline-start: 14px; display: grid; gap: 4px; }

@@ -1,9 +1,10 @@
 // Runs the tests on a real PostgreSQL. Each test gets its own copy of a freshly migrated database,
 // and uses it through the same restricted account as production.
-//   TEST_DATABASE_URL  an account that may create databases and roles (used in CI); otherwise a private local cluster is started
+//   TEST_DATABASE_URL  an account that may create databases and roles (used in CI); otherwise a private cluster is started in the temp folder
 import { spawn } from "node:child_process";
 import { randomBytes } from "node:crypto";
 import { readdirSync } from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import pg from "pg";
@@ -13,7 +14,7 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 let admin = process.env.TEST_DATABASE_URL;
 if (!admin) {
   const { startLocal } = await import("./localdb.mjs");
-  admin = (await startLocal({ dir: path.join(ROOT, "data", "pgtest"), port: 54331, name: "silkroad_test", fast: true })).owner;
+  admin = (await startLocal({ dir: path.join(os.tmpdir(), "silkroad-pgtest"), port: 54331, name: "silkroad_test", fast: true })).owner;
 }
 const run = "t" + randomBytes(4).toString("hex"), role = `${run}_app`, pass = randomBytes(12).toString("hex");
 const at = (db, app) => { const u = new URL(admin); u.pathname = `/${db}`; if (app) { u.username = role; u.password = pass; } return u.href; };

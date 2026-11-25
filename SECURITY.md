@@ -12,7 +12,10 @@ Please report a vulnerability privately through GitHub: **Security → Report a 
 | Another website acting for a provider | Origin check on every change, JSON only, strict cookies. A sign-in link asks before switching accounts. |
 | Script injection | Text is never inserted as HTML. The content security policy allows no inline scripts or styles. |
 | SQL injection | Every value is a bound parameter. |
-| Forged payment | Octo's notification is never believed: the server asks Octo. Payme must present its key; its addresses can be enforced with `PAYME_CHECK_IP=1`. Amounts and ids must match. |
+| Forged payment | Octo's notification is never believed: the server asks Octo. Click's calls must carry its signature. Payme must present its key; its addresses can be enforced with `PAYME_CHECK_IP=1`. Amounts and ids must match. |
+| Stranger at the door | A host's exact address and phone are shown only to a guest whose booking is confirmed. A guest's phone is shown only to their host, and the e-mail to nobody. |
+| Reading one host's income | Public impact figures need at least three earning hosts. |
+| Guessing who has an account | Sign-in and "find my booking" by e-mail give the same answer for every address. |
 | Double sale, double payment, double refund | Row locks, unique constraints and idempotent steps, tested with simultaneous requests. |
 | Insider or leaked server account | The server's database account cannot change tables or rewrite the audit log. A trigger stops even the owner from editing it. |
 | Guessing | 192-bit secrets. Sign-in, administration, booking, AI and reports are rate limited per address (per /64 for IPv6). |
@@ -30,7 +33,8 @@ Please report a vulnerability privately through GitHub: **Security → Report a 
 
 ## Known limits
 
-- One administrator key, no separate administrator accounts and no second factor for administration. Restrict `/admin` in Caddy to your own addresses if you can.
+- One administrator key and no separate administrator accounts. Turn on two-step sign-in (`npm run admin:totp`) and restrict `/admin` in Caddy to your own addresses if you can.
 - A booking link opens the booking for whoever has it, like a paper ticket.
+- Click signs its calls with MD5 and SHA-1, because its protocol requires it.
 - Rate limits are kept in memory and reset when the server restarts.
 - No independent penetration test has been done.

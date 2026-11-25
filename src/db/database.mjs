@@ -29,8 +29,8 @@ export function placeholders(sql) {
   return out;
 }
 
-export function createDatabase(url, { max = 10, ssl } = {}) {
-  const pool = new pg.Pool({ connectionString: url, max, types, ssl, connectionTimeoutMillis: 10_000, idleTimeoutMillis: 30_000, statement_timeout: 15_000, idle_in_transaction_session_timeout: 20_000, application_name: "silkroad" });
+export function createDatabase(url, { max = 10, ssl, idle = 30_000 } = {}) {
+  const pool = new pg.Pool({ connectionString: url, max, types, ssl, connectionTimeoutMillis: 10_000, idleTimeoutMillis: idle, statement_timeout: 15_000, idle_in_transaction_session_timeout: 20_000, application_name: "silkroad" });
   pool.on("error", (e) => console.error("[db] idle connection:", e.code ?? e.message));
   const current = new AsyncLocalStorage(); // the open transaction, if any
 

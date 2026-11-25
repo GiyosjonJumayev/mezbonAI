@@ -6,6 +6,8 @@ import path from "node:path";
 import { aiEnabled } from "../ai/claude.mjs";
 import { CANCEL_HOURS } from "../domain/bookings.mjs";
 import { MAX_PHOTOS } from "../domain/catalog.mjs";
+import { asHost } from "../domain/accounts.mjs";
+import { cleanEmail } from "../domain/mail.mjs";
 import { HOTEL_FEE, PLANS } from "../domain/plans.mjs";
 import { CATEGORIES, LANGS, LANG_NAMES, PHRASES, PROVIDER_TYPES, REGIONS, REGION_NAMES, UI } from "../lib/i18n.mjs";
 import { fail } from "../lib/util.mjs";
@@ -18,17 +20,18 @@ function sniffImage(b) {
   return null;
 }
 
-export function createRoutes({ core, payments, admin, config, db, push, photos }) {
+export function createRoutes({ core, payments, admin, metrics, config, db, push, mail, rates, photos }) {
   mkdirSync(photos, { recursive: true });
-  const limitAi = limiter(20, 60e3), limitSignup = limiter(10, 10 * 60e3), limitLogin = limiter(20, 10 * 60e3), limitTicket = limiter(60, 60e3), limitAdmin = limiter(5, 15 * 60e3), limitReport = limiter(5, 3600e3), limitPay = limiter(20, 60e3), limitBook = limiter(20, 10 * 60e3), limitTrip = limiter(5, 10 * 60e3);
+  const limitAi = limiter(20, 60e3), limitSignup = limiter(10, 10 * 60e3), limitLogin = limiter(20, 10 * 60e3), limitTicket = limiter(60, 60e3), limitAdmin = limiter(5, 15 * 60e3), limitReport = limiter(5, 3600e3), limitPay = limiter(20, 60e3), limitMail = limiter(5, 10 * 60e3), limitAddress = limiter(3, 3600e3), limitBook = limiter(20, 10 * 60e3), limitTrip = limiter(5, 10 * 60e3);
   const newSearch = counter(1, 10 * 60e3); // one visitor repeating a search is one signal of demand
   const newView = counter(1, 30 * 60e3);
   const dropPhoto = (f) => (f ? unlink(path.join(photos, path.basename(f))).catch(() => {}) : null);
+  const tripView = async (token) => { const { id, ...t } = await core.trip(token); return { ...t, payMethods: payments.tripMethods() }; };
   const signedIn = async (session, opening) => { const s = await opening; session.set(s.token, s.maxAge); return s.host; };
 
   const open = {
     "GET /healthz": async () => ({ ok: await db.ping() }),
-    "GET /api/config": () => ({ langs: LANGS, langNames: LANG_NAMES, regions: REGIONS, regionNames: REGION_NAMES, categories: CATEGORIES, ui: UI, phrases: PHRASES, providerTypes: PROVIDER_TYPES, plans: PLANS, hotelFee: HOTEL_FEE, cancelHours: CANCEL_HOURS, maxPhotos: MAX_PHOTOS, ai: aiEnabled(), payMethods: payments.methods(), testPayments: config.testPayments, usdRate: config.usdRate }),
+    "GET /api/config": () => ({ langs: LANGS, langNames: LANG_NAMES, regions: REGIONS, regionNames: REGION_NAMES, categories: CATEGORIES, ui: UI, phrases: PHRASES, providerTypes: PROVIDER_TYPES, plans: PLANS, hotelFee: HOTEL_FEE, cancelHours: CANCEL_HOURS, maxPhotos: MAX_PHOTOS, ai: aiEnabled(), payMethods: payments.methods(), testPayments: config.testPayments, fx: rates.get(), mail: mail.on }),
     "GET /api/listings": async ({ q, ip }) => {
       const f = { region: q.get("region"), category: q.get("category"), date: q.get("date"), guests: Number(q.get("guests")), lang: q.get("lang"), source: q.get("source") === "ai" ? "ai" : "web" };
       return core.search({ ...f, log: newSearch([ip, f.source, f.region, f.category].join("|")) });
@@ -41,8 +44,10 @@ export function createRoutes({ core, payments, admin, config, db, push, photos }
     "GET /api/listings/:id/availability": ({ id, q }) => core.availability(id, q.get("from"), Number(q.get("days")) || 21),
     "GET /api/providers/:id": ({ id }) => core.provider(id),
     "POST /api/trips/plan": ({ body, ip }) => { limitAi(ip); return core.planTrip(body); },
-    "POST /api/trips": ({ body, ip }) => { limitTrip(ip); return core.bookTrip(body); },
-    "GET /api/trips/:id": ({ id }) => core.trip(id),
+    "POST /api/trips": async ({ body, ip }) => { limitTrip(ip); return tripView((await core.bookTrip(body)).token); },
+    "GET /api/trips/:id": ({ id }) => tripView(id),
+    "POST /api/trips/:id/pay": async ({ id, body, ip }) => { limitPay(ip); return payments.startTrip(await core.trip(id), body.method); },
+    "POST /api/trips/:id/refresh": async ({ id, ip }) => { limitPay(ip); await payments.refresh("trip", (await core.trip(id)).id); return tripView(id); },
     "POST /api/listings/:id/report": ({ id, body, ip }) => { limitReport(ip); return core.report(id, body); },
     "GET /api/hotels": () => core.hotels(),
     "GET /api/hotels/:id": async ({ id }) => { const h = await core.hotel(id); if (!h) throw fail(404, "Mehmonxona topilmadi", "notfound"); return h; },
@@ -50,7 +55,9 @@ export function createRoutes({ core, payments, admin, config, db, push, photos }
       const { platform, ...p } = await core.panel({ days: Number(q.get("days")) || 0, demo: q.get("demo") !== "0" });
       return config.testPayments ? { ...p, platform } : p; // platform income is for the demo, never public in production
     },
+    "GET /api/impact": () => metrics.impact(),
     "GET /feeds/products.json": () => core.feed(),
+    "POST /api/find": ({ body, ip }) => { limitMail(ip); if (typeof body.email === "string") limitAddress(`find|${body.email.trim().toLowerCase()}`); return mail.findBookings(body.email, body.lang); },
     "GET /api/push/key": () => ({ key: push.publicKey }),
   };
 
@@ -77,6 +84,24 @@ export function createRoutes({ core, payments, admin, config, db, push, photos }
     },
     "POST /api/auth/key": ({ body, ip, label, session }) => { limitLogin(ip); return signedIn(session, core.signIn(body.key, label)); },
     "POST /api/auth/link": ({ body, ip, label, session }) => { limitLogin(ip); return signedIn(session, core.useLink(body.token, label)); },
+    /** The same answer whether or not the address belongs to a provider. */
+    "POST /api/auth/email": async ({ body, ip }) => {
+      limitMail(ip);
+      const to = cleanEmail(body.email);
+      if (!to) throw fail(400, "Email kerak", "email");
+      limitAddress(`host|${to.toLowerCase()}`);
+      const h = await core.hostByEmail(to);
+      if (h) await mail.queue(h.email, "SilkRoad kabinetiga kirish", { title: "Kabinetga kirish", lines: ["Havola 15 daqiqa ichida va faqat bir marta ishlaydi. Siz so‘ramagan bo‘lsangiz, e’tibor bermang."], button: { text: "Kirish", url: `${config.publicUrl}/mezbon#kirish=${await core.loginLink(asHost(h.id))}` } });
+      return { ok: true };
+    },
+    "POST /api/auth/email-confirm": ({ body, ip }) => { limitLogin(ip); return core.confirmEmail(body.token); },
+    "POST /api/host/contact": ({ key, body }) => core.setContact(key, body),
+    "POST /api/host/email": async ({ key, body, ip }) => {
+      limitMail(ip);
+      const { email, token } = await core.askEmail(key, body.email);
+      if (token) await mail.queue(email, "SilkRoad: emailni tasdiqlang", { title: "Emailni tasdiqlang", lines: ["Tasdiqlasangiz, yangi bronlar haqida xabar va kirish havolasi shu manzilga keladi. Havola 1 soat ishlaydi."], button: { text: "Tasdiqlash", url: `${config.publicUrl}/mezbon#email=${token}` } });
+      return { ok: true };
+    },
     "POST /api/auth/sign-out": async ({ session }) => { await core.signOut(session.token); session.set("", 0); return { ok: true }; },
     "POST /api/auth/rotate": async ({ key, ip, label, session }) => {
       limitLogin(ip);
@@ -133,6 +158,7 @@ export function createRoutes({ core, payments, admin, config, db, push, photos }
   // Everything below needs an administrator session; `admin: true` is checked before the handler runs.
   const adminOnly = {
     "GET /api/admin": () => admin.overview(),
+    "GET /api/admin/metrics": ({ q }) => metrics.investor({ days: Number(q.get("days")) || 90, sample: q.get("sample") === "1" }),
     "GET /api/admin/hosts": ({ q }) => admin.hosts(q.get("q") ?? ""),
     "POST /api/admin/hosts/:id/verify": ({ id, body }) => admin.verifyHost(id, body.on),
     "POST /api/admin/hosts/:id/suspend": ({ id, body }) => admin.suspendHost(id, body.on),
@@ -144,7 +170,8 @@ export function createRoutes({ core, payments, admin, config, db, push, photos }
     "POST /api/admin/refunds/:id/retry": ({ id }) => payments.retryRefund(id),
   };
   const adminDoor = {
-    "POST /api/admin/login": ({ body, ip, adminSession }) => { limitAdmin(ip); adminSession.open(body.key); return { ok: true }; },
+    "GET /api/admin/door": ({ adminSession }) => ({ twoStep: adminSession.twoStep }),
+    "POST /api/admin/login": ({ body, ip, adminSession }) => { limitAdmin(ip); adminSession.open(body.key, body.code); return { ok: true }; },
     "POST /api/admin/logout": ({ adminSession }) => { adminSession.close(); return { ok: true }; },
   };
 
