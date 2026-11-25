@@ -1,24 +1,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync } from "node:fs";
-import os from "node:os";
-import path from "node:path";
+import { serve } from "./helpers.mjs";
 
-process.env.MEZBON_OFFLINE = "1";
-process.env.MEZBON_DATA = mkdtempSync(path.join(os.tmpdir(), "mezbon-"));
-const { openDb } = await import("../src/db.mjs");
-const { createApp } = await import("../src/server.mjs");
-
-const db = openDb();
-async function serve(opts) {
-  const app = createApp(db, { telegram: null, ...opts });
-  await new Promise((r) => app.server.listen(0, "127.0.0.1", r));
-  const base = `http://127.0.0.1:${app.server.address().port}`;
-  const post = (p, b, h = {}) => fetch(base + p, { method: "POST", headers: { "Content-Type": "application/json", ...h }, body: JSON.stringify(b) });
-  return { ...app, base, post, close: () => { app.server.closeAllConnections(); app.server.close(); } };
-}
-const a = await serve();
-test.after(() => a.close());
+const a = await serve(), { db } = a;
 
 test("errors carry a code so each audience gets its own words", async () => {
   assert.equal((await (await fetch(a.base + "/api/bookings/none")).json()).code, "notfound");
@@ -27,19 +11,18 @@ test("errors carry a code so each audience gets its own words", async () => {
 });
 
 test("test payments can be switched off", async () => {
-  const b = await serve({ testPayments: false });
-  assert.equal((await b.post("/api/bookings/x/pay-test", {})).status, 403);
-  assert.equal((await (await fetch(b.base + "/api/config")).json()).testPayments, false);
-  b.close();
+  const b = await serve({ db, env: { NODE_ENV: "production" } });
+  assert.deepEqual((await b.get("/api/config")).payMethods, []);
+  assert.deepEqual((await a.get("/api/config")).payMethods, ["test"]);
 });
 
 test("repeating a search counts as one signal of demand", async () => {
   for (let i = 0; i < 3; i++) await fetch(a.base + "/api/listings?region=sirdaryo");
-  assert.equal(db.prepare("SELECT COUNT(*) n FROM searches WHERE region='sirdaryo'").get().n, 1);
+  assert.equal((await db.one("SELECT COUNT(*) n FROM searches WHERE region='sirdaryo'")).n, 1);
 });
 
 test("photo gallery: add, choose the cover, remove, and clean up files", async () => {
-  const h = a.core.createHost("Foto"), l = await a.core.createDraft(h.key, "kulolman"), head = { "X-Host-Key": h.key };
+  const h = await a.core.createHost("Foto"), l = await a.core.createDraft(h.key, "kulolman"), head = { "X-Host-Key": h.key };
   const send = async (tail) => a.post(`/api/host/listings/${l.id}/photo`, { data: Buffer.from([0xff, 0xd8, 0xff, tail]).toString("base64") }, head);
   const up = async (tail) => (await (await send(tail)).json()).photos.at(-1);
   const act = async (what, file, h2 = head) => a.post(`/api/host/listings/${l.id}/photo-${what}`, { file }, h2);
@@ -47,7 +30,7 @@ test("photo gallery: add, choose the cover, remove, and clean up files", async (
   const first = await up(1), second = await up(2);
   assert.deepEqual([await code(first), await code(second)], [200, 200]);
   assert.equal((await (await act("cover", second)).json()).photo, second);
-  assert.equal((await act("remove", first, { "X-Host-Key": a.core.createHost("Boshqa").key })).status, 404);
+  assert.equal((await act("remove", first, { "X-Host-Key": (await a.core.createHost("Boshqa")).key })).status, 404);
   assert.equal((await act("remove", "../../mezbon.db")).status, 404);
   assert.deepEqual((await (await act("remove", first)).json()).photos, [second]);
   assert.equal(await code(first), 404);

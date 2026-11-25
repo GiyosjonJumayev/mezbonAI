@@ -1,7 +1,7 @@
 {
   "name": "silkroad-experience-os",
-  "version": "3.0.0",
-  "description": "AI-powered tourism business operating system: AI business assistant, smart experience booking, tourism intelligence.",
+  "version": "5.0.0",
+  "description": "Tourism business platform for Uzbekistan: experience booking with real payments, AI business assistant, demand intelligence. PostgreSQL.",
   "private": true,
   "license": "UNLICENSED",
   "type": "module",
@@ -9,17 +9,22 @@
     "node": ">=24"
   },
   "scripts": {
-    "start": "node --disable-warning=ExperimentalWarning --env-file-if-exists=.env src/server.mjs",
-    "dev": "node --watch --disable-warning=ExperimentalWarning --env-file-if-exists=.env src/server.mjs",
-    "mcp": "node --env-file-if-exists=.env src/mcp.mjs",
-    "telegram": "node --disable-warning=ExperimentalWarning --env-file-if-exists=.env src/telegram.mjs",
-    "reset": "node --disable-warning=ExperimentalWarning src/reset.mjs",
+    "start": "node --env-file-if-exists=.env src/main.mjs",
+    "dev": "node --watch --env-file-if-exists=.env src/main.mjs",
+    "db:local": "node scripts/localdb.mjs start",
+    "db:stop": "node scripts/localdb.mjs stop",
+    "db:reset": "node scripts/localdb.mjs reset",
+    "mcp": "node --env-file-if-exists=.env src/adapters/mcp.mjs",
     "check": "node scripts/check.mjs",
-    "test": "node --disable-warning=ExperimentalWarning --test \"test/*.test.mjs\""
+    "test": "node scripts/test.mjs",
+    "demo": "node --env-file-if-exists=.env scripts/demo.mjs",
+    "backup": "node --env-file-if-exists=.env scripts/backup.mjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^1.13.0",
     "@modelcontextprotocol/sdk": "^1.32.2",
+    "@simplewebauthn/server": "^14.1.0",
+    "pg": "^8.23.1",
     "qrcode": "^1.5.4",
     "web-push": "^4.0.0",
     "zod": "^4.6.7"

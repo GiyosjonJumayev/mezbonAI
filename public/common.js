@@ -1,9 +1,9 @@
 import { art } from "/art.js";
 
-export async function api(path, body, key) {
+/** A signed-in provider is recognised by an HttpOnly cookie, so no secret passes through this code. */
+export async function api(path, body) {
   const headers = {};
   if (body) headers["Content-Type"] = "application/json";
-  if (key) headers["X-Host-Key"] = key;
   let r;
   try { r = await fetch(path, { method: body ? "POST" : "GET", headers, body: body && JSON.stringify(body) }); }
   catch { throw Object.assign(new Error("Serverga ulanib bo‘lmadi. Internetni tekshiring"), { code: "network" }); }
@@ -21,6 +21,7 @@ export function el(spec, props = {}, ...kids) {
   for (const [k, v] of Object.entries(props)) {
     if (v == null || v === false || k === "before") continue;
     if (k.startsWith("on")) n[k] = v;
+    else if (k === "style") n.style.cssText = v; // set through the CSSOM, so the CSP can forbid inline styles
     else if (k === "dataset") Object.assign(n.dataset, v);
     else if (k === "value" || k === "textContent") n[k] = v;
     else n.setAttribute(k, v === true ? "" : v);
@@ -78,13 +79,13 @@ export async function copy(text) {
   return ok;
 }
 
-/** Server-sent events over fetch, so the host key travels in a header and stays out of URLs and logs. */
-export function listen(path, key, onEvent) {
+/** Server-sent events over fetch, which reports a lost session and can wait longer between retries. */
+export function listen(path, onEvent) {
   const ctl = new AbortController();
   (async () => {
     for (let wait = 1000; !ctl.signal.aborted; wait = Math.min(wait * 2, 20000)) {
       try {
-        const r = await fetch(path, { headers: { "X-Host-Key": key }, signal: ctl.signal });
+        const r = await fetch(path, { signal: ctl.signal });
         if (r.status === 401) return;
         const reader = r.body.pipeThrough(new TextDecoderStream()).getReader();
         for (let buf = ""; ;) {
@@ -116,7 +117,7 @@ export function plate(seed, category) {
   svg.setAttribute("viewBox", "-100 -100 200 200");
   svg.setAttribute("aria-hidden", "true");
   svg.classList.add("plate");
-  const add = (tag, at) => { const n = document.createElementNS(NS, tag); for (const k in at) n.setAttribute(k, at[k]); svg.append(n); };
+  const add = (tag, at) => { const n = document.createElementNS(NS, tag); for (const k in at) k === "style" ? (n.style.cssText = at[k]) : n.setAttribute(k, at[k]); svg.append(n); };
   const ring = (n, r, len, w, fill, turn = 0) => {
     for (let i = 0; i < n; i++) add("path", { d: `M0 ${-r} C ${w} ${-r - len * 0.35}, ${w} ${-r - len * 0.75}, 0 ${-r - len} C ${-w} ${-r - len * 0.75}, ${-w} ${-r - len * 0.35}, 0 ${-r} Z`, transform: `rotate(${(360 / n) * (i + turn)})`, fill });
   };
@@ -138,3 +139,6 @@ export const GEO = { qoraqalpogiston: [1, 1], xorazm: [2, 2], navoiy: [3, 2], bu
 /** The provider's cover photo, or generated artwork for the craft. */
 export const visual = (l, alt = "") => (l.photo ? el("img.photo", { src: `/photos/${l.photo}`, alt, loading: "lazy" }) : art(l.id ?? l.listing_id, l.category));
 export const tint = () => null;
+
+/** Brand names, so they need no translation. Test payments have their own wording. */
+export const PAY_NAME = { octo: "Visa, Mastercard, Uzcard, Humo (Octo)", payme: "Payme" };

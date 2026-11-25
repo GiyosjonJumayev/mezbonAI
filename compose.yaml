@@ -1,0 +1,52 @@
+# One server: PostgreSQL, the app and HTTPS (Caddy gets the certificate by itself).
+# Put SITE_DOMAIN, DB_OWNER_PASSWORD, DB_APP_PASSWORD, ADMIN_KEY and the payment keys in .env, then: docker compose up -d
+# Passwords go into a connection address, so use letters and digits only:  openssl rand -hex 24
+services:
+  db:
+    image: postgres:18-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: silkroad_owner
+      POSTGRES_PASSWORD: ${DB_OWNER_PASSWORD:?}
+      POSTGRES_DB: silkroad
+      DB_APP_PASSWORD: ${DB_APP_PASSWORD:?}
+    volumes:
+      - db:/var/lib/postgresql
+      - ./deploy/init-db.sh:/docker-entrypoint-initdb.d/init-db.sh:ro
+    networks: [inside]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U silkroad_owner -d silkroad"]
+      interval: 5s
+      retries: 20
+  app:
+    build: .
+    restart: unless-stopped
+    depends_on:
+      db: { condition: service_healthy }
+    env_file: .env
+    environment:
+      PUBLIC_URL: https://${SITE_DOMAIN:?}
+      DATABASE_URL: postgres://silkroad_app:${DB_APP_PASSWORD}@db:5432/silkroad
+      MIGRATE_URL: postgres://silkroad_owner:${DB_OWNER_PASSWORD}@db:5432/silkroad
+      ADMIN_KEY: ${ADMIN_KEY:?}
+    volumes: [data:/data]
+    networks: [inside, outside]
+    read_only: true
+    tmpfs: [/tmp]
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    depends_on: [app]
+    environment:
+      SITE_DOMAIN: ${SITE_DOMAIN:?}
+    ports: ["80:80", "443:443", "443:443/udp"]
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy:/data
+    networks: [outside]
+networks:
+  inside: { internal: true }
+  outside: {}
+volumes: { db: {}, data: {}, caddy: {} }

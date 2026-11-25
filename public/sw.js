@@ -1,12 +1,12 @@
 // Offline support and push notifications. Everything is network first, so an update is never hidden by the cache.
-const CACHE = "silkroad-2";
-const SHELL = ["/", "/theme.js", "/app.css", "/components.css", "/common.js", "/art.js", "/pwa.js", "/tourist.js", "/icon.svg", "/fonts/onest-latin-wght-normal.woff2"];
+const CACHE = "silkroad-3";
+const SHELL = ["/", "/theme.js", "/app.css", "/components.css", "/common.js", "/art.js", "/pwa.js", "/tourist.js", "/trip.js", "/icon.svg", "/fonts/onest-latin-wght-normal.woff2"];
 
 self.addEventListener("install", (e) => { e.waitUntil(caches.open(CACHE).then((c) => c.addAll(SHELL)).then(() => self.skipWaiting())); });
 self.addEventListener("activate", (e) => { e.waitUntil(caches.keys().then((ks) => Promise.all(ks.filter((k) => k !== CACHE).map((k) => caches.delete(k)))).then(() => self.clients.claim())); });
 
 /** A guest's own ticket and what they looked at stay readable offline. Provider data is never stored. */
-const keep = (u) => u.pathname === "/api/config" || u.pathname === "/api/qr.svg" || /^\/api\/listings(\/[\w-]+)?$/.test(u.pathname) || /^\/api\/bookings\/[\w-]+$/.test(u.pathname);
+const keep = (u) => /^\/api\/trips\/[\w-]{20,}$/.test(u.pathname) || u.pathname === "/api/config" || u.pathname === "/api/qr.svg" || /^\/api\/listings(\/[\w-]+)?$/.test(u.pathname) || /^\/api\/bookings\/[\w-]+$/.test(u.pathname);
 
 async function saved(u, key, page) {
   // The unfiltered catalogue is the same list whatever the language or page that asked for it.
@@ -23,7 +23,7 @@ self.addEventListener("fetch", (e) => {
   const u = new URL(e.request.url);
   if (e.request.method !== "GET" || u.origin !== location.origin) return;
   if (u.pathname.startsWith("/api/") && !keep(u)) return;
-  if (u.pathname.startsWith("/feeds/") || u.pathname === "/healthz") return;
+  if (u.pathname.startsWith("/feeds/") || u.pathname.startsWith("/calendar/") || u.pathname === "/admin" || u.pathname === "/healthz") return;
   const page = e.request.mode === "navigate";
   const key = page ? u.pathname : e.request;
   e.respondWith(fetch(e.request).then((r) => {

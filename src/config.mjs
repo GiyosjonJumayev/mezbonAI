@@ -1,0 +1,45 @@
+// One place that reads the environment. The server refuses to start with an unsafe combination.
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+
+export const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+
+export function loadConfig(env = process.env) {
+  const problems = [], production = env.NODE_ENV === "production";
+  const publicUrl = (env.PUBLIC_URL || `http://localhost:${env.PORT || 4321}`).replace(/\/+$/, "");
+  let site;
+  try { site = new URL(publicUrl); } catch { problems.push("PUBLIC_URL noto‘g‘ri"); site = new URL("http://localhost"); }
+  const https = site.protocol === "https:";
+
+  const pair = (a, b) => { if (Boolean(env[a]) !== Boolean(env[b])) problems.push(`${a} va ${b} birga berilishi kerak`); return env[a] && env[b]; };
+  const octo = pair("OCTO_SHOP_ID", "OCTO_SECRET") ? { shopId: Number(env.OCTO_SHOP_ID), secret: env.OCTO_SECRET, test: env.OCTO_TEST === "1" } : null;
+  const payme = pair("PAYME_MERCHANT_ID", "PAYME_KEY") ? {
+    merchant: env.PAYME_MERCHANT_ID, key: env.PAYME_KEY, login: env.PAYME_LOGIN || "Paycom", test: env.PAYME_TEST === "1",
+    checkout: (env.PAYME_CHECKOUT_URL || (env.PAYME_TEST === "1" ? "https://test.paycom.uz" : "https://checkout.paycom.uz")).replace(/\/+$/, ""),
+    ips: env.PAYME_CHECK_IP === "1" ? Array.from({ length: 15 }, (_, i) => `185.234.113.${i + 1}`) : null,
+  } : null;
+  if (octo && !Number.isInteger(octo.shopId)) problems.push("OCTO_SHOP_ID butun son bo‘lishi kerak");
+  if ((octo || payme) && !https) problems.push("Haqiqiy to‘lov uchun PUBLIC_URL https:// bilan boshlanishi kerak");
+  const fiscalKeys = ["FISCAL_INN", "FISCAL_SPIC", "FISCAL_PACKAGE"], fiscalSet = fiscalKeys.filter((k) => env[k]).length;
+  if (fiscalSet && fiscalSet < 3) problems.push(`${fiscalKeys.join(", ")} birga berilishi kerak`);
+  const fiscal = fiscalSet === 3 ? { inn: env.FISCAL_INN, spic: env.FISCAL_SPIC, pack: env.FISCAL_PACKAGE, vat: Number(env.FISCAL_VAT) || 0 } : null;
+
+  const adminKey = env.ADMIN_KEY || null;
+  if (adminKey && adminKey.length < 24) problems.push("ADMIN_KEY kamida 24 belgi bo‘lsin");
+  if (!env.DATABASE_URL) problems.push("DATABASE_URL yo‘q. Mahalliy baza uchun: npm run db:local");
+  // Test payments must never be reachable on a real deployment by accident.
+  const testPayments = env.ALLOW_TEST_PAYMENTS === "1" || (!production && !octo && !payme);
+  if (production) {
+    if (!https) problems.push("Ishlab chiqarishda PUBLIC_URL https:// bo‘lishi shart");
+    if (!adminKey) problems.push("Ishlab chiqarishda ADMIN_KEY shart");
+  }
+  return {
+    production, publicUrl, https, origin: site.origin, rpId: site.hostname, problems,
+    databaseUrl: env.DATABASE_URL, migrateUrl: env.MIGRATE_URL || env.DATABASE_URL, dbSsl: env.DATABASE_SSL === "1" ? { rejectUnauthorized: true } : undefined,
+    port: Number(env.PORT) || 4321, host: env.HOST || "127.0.0.1", trustProxy: env.TRUST_PROXY === "1",
+    dataDir: env.MEZBON_DATA || path.join(ROOT, "data"), seed: env.SEED !== "0" && !production, usdRate: Number(env.USD_RATE) || null,
+    octo, payme, fiscal, testPayments, adminKey,
+    telegramToken: env.TELEGRAM_BOT_TOKEN || null, pushContact: env.PUSH_CONTACT || (https ? publicUrl : "mailto:noreply@example.com"),
+    retentionDays: Math.max(30, Number(env.RETENTION_DAYS) || 365),
+  };
+}

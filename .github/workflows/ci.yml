@@ -6,12 +6,16 @@ on:
 permissions:
   contents: read
 jobs:
-  test:
-    strategy:
-      matrix:
-        os: [ubuntu-latest, windows-latest]
-    runs-on: ${{ matrix.os }}
-    timeout-minutes: 10
+  linux:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:18
+        env:
+          POSTGRES_PASSWORD: ci-only
+        ports: ["5432:5432"]
+        options: --health-cmd "pg_isready -U postgres" --health-interval 5s --health-retries 20
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -20,4 +24,32 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run check
+      - run: npm audit --omit=dev --audit-level=high
       - run: npm test
+        env:
+          TEST_DATABASE_URL: postgres://postgres:ci-only@127.0.0.1:5432/postgres
+      - name: The container starts and answers
+        env:
+          DB_OWNER_PASSWORD: ci0owner
+          DB_APP_PASSWORD: ci0app
+          ADMIN_KEY: ci-only-ci-only-ci-only-ci
+          SITE_DOMAIN: localhost
+        run: |
+          touch .env
+          docker compose up -d --build db app
+          for i in $(seq 1 40); do docker compose exec -T app wget -qO- http://127.0.0.1:4321/healthz && exit 0; sleep 2; done
+          docker compose logs; exit 1
+  windows:
+    runs-on: windows-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npm run check
+      # The Windows image ships PostgreSQL; PGBIN points at its tools.
+      - run: PG_BIN="$PGBIN" npm test
+        shell: bash

@@ -1,5 +1,6 @@
-import { act, api, ask, copy, el, GEO, plate, store, toast, uzs, visual } from "/common.js";
+import { PAY_NAME, act, api, ask, copy, el, GEO, plate, store, toast, uzs, visual } from "/common.js";
 import { art, icon } from "/art.js";
+import { planner, tripPage } from "/trip.js";
 import { enablePush, installButton, pushSupported, themePicker } from "/pwa.js";
 
 const app = document.getElementById("app");
@@ -20,9 +21,12 @@ const fmt = (o) => { try { return new Intl.DateTimeFormat(lang, { timeZone: "UTC
 const asDate = (d) => new Date(`${d}T00:00:00Z`);
 const longDate = (d) => fmt({ weekday: "long", day: "numeric", month: "long" }).format(asDate(d));
 const today = () => new Date(Date.now() + 5 * 3600e3).toISOString().slice(0, 10); // Tashkent
+const addDays = (d, n) => new Date(+asDate(d) + n * 864e5).toISOString().slice(0, 10);
 const placeOf = (l) => (l.place && l.place !== cfg.regions[l.region] ? `${l.place}, ${regionName(l.region)}` : regionName(l.region));
 const star = () => el("span.star", { "aria-hidden": "true" }, "★");
 const rating = (l) => l.reviews > 0 && el("span.rating", { "aria-label": `${l.rating} / 5, ${t("reviews")}: ${l.reviews}` }, star(), ` ${l.rating} (${l.reviews})`);
+const verified = (l) => l.verified && el("span.verified", {}, icon("shield", 18), t("verified"));
+const clockTime = (iso) => new Intl.DateTimeFormat(lang, { timeZone: "Asia/Tashkent", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }).format(new Date(iso));
 const calm = matchMedia("(prefers-reduced-motion: reduce)");
 
 // A hotel QR code sets the referrer for this browser tab only.
@@ -67,7 +71,7 @@ const back = () => el("div", {}, link({}, "a.back", {}, t("back")));
 function card(l, level = "h3") {
   const pic = el("div.art", {}, visual(l), l.demo && el("span.badge", {}, t("sample")));
   return el("article.tile-l", {}, link({ l: l.id }, "a", { before: () => { pic.style.viewTransitionName = "pic"; } }, pic,
-    el("div.stack", { style: "gap:5px" }, el(level, {}, l.i18n[lang].title), el("div.meta", {}, el("span", {}, regionName(l.region)), el("span", {}, `${l.duration_min} ${t("minutes")}`), el("span", {}, `${l.capacity} ${t("upTo")}`)),
+    el("div.stack", { style: "gap:5px" }, el(level, {}, l.i18n[lang].title), el("div.meta", {}, el("span", {}, regionName(l.region)), el("span", {}, `${l.duration_min} ${t("minutes")}`), el("span", {}, `${l.capacity} ${t("upTo")}`), verified(l)),
       el("div.foot", {}, el("span.price", {}, money(l.price_uzs), " ", el("small", {}, t("perPerson"))), rating(l)))), heart(l));
 }
 const skeletons = (n) => el("div.grid", { "aria-hidden": "true" }, Array.from({ length: n }, () => el("div.stack", {}, el("div.skeleton", { style: "aspect-ratio:4/3" }), el("div.skeleton.line"), el("div.skeleton.line", { style: "width:60%" }))));
@@ -96,7 +100,7 @@ async function catalog(id) {
   app.replaceChildren(
     filtered ? el("div.compactbar", {}, el("div.wrap", {}, finder(f)))
       : el("section.hero", {}, el("div.wall", { "aria-hidden": "true" }, [0, 1, 2].map((c) => el("div", {}, [0, 1, 2, 3].map((r) => art(`hero${c}${r}`, wall[(c * 4 + r) % wall.length]))))),
-        el("div.wrap", {}, el("div.say", {}, el("h1", {}, t("headline")), el("p", {}, t("heart"), " ", t("sub")), hotel && el("p.small", {}, `${t("via")} ${hotel.name}`)), finder(f))),
+        el("div.wrap", {}, el("div.say", {}, el("h1", {}, t("headline")), el("p", {}, t("heart"), " ", t("sub")), hotel && el("p.small", {}, `${t("via")} ${hotel.name}`)), finder(f), el("div", {}, link({ plan: 1 }, "a.btn.onhero", {}, icon("route", 20), t("trip"))))),
     el("div.wrap", { style: "padding-block-start:28px;gap:30px" }, rail(f), results, below));
 
   const list = await api("/api/listings?" + new URLSearchParams({ ...f, lang }));
@@ -126,7 +130,7 @@ function gallery(l) {
   const shown = pics.slice(0, 6);
   shown[0].style.viewTransitionName = "pic";
   if (l.demo) shown[0].append(el("span.badge", {}, t("sample")));
-  return el("div.gallery", { dataset: { n: shown.length } }, shown);
+  return el("div.gallery", { dataset: { n: shown.length }, ...(shown.length > 1 && { tabindex: 0, role: "group", "aria-label": l.i18n[lang].title }) }, shown);
 }
 
 async function detail(id, lid) {
@@ -194,10 +198,11 @@ async function detail(id, lid) {
     el("div.stack", { style: "gap:26px" },
       el("div.stack", { style: "gap:14px" }, el("h1", {}, l.i18n[lang].title),
         el("ul.specs", {}, [["pin", placeOf(l)], ["clock", `${l.duration_min} ${t("minutes")}`], ["people", `${l.capacity} ${t("upTo")}`]].map(([i, v]) => el("li", {}, icon(i, 20), v)), l.reviews > 0 && el("li", {}, rating(l)))),
-      el("div.who", {}, el("span.avatar", { "aria-hidden": "true" }, [...l.host][0].toUpperCase()), el("div", {}, el("b", {}, l.host), el("div.muted.small", {}, cfg.providerTypes[l.host_type][lang], l.hosted > 0 && ` · ${l.hosted} ${t("hosted")}`))),
+      el("div.who", {}, el("span.avatar", { "aria-hidden": "true" }, [...l.host][0].toUpperCase()), el("div", {}, el("b", {}, link({ host: l.host_id }, "a", {}, l.host)), el("div.muted.small", {}, cfg.providerTypes[l.host_type][lang], l.hosted > 0 && ` · ${l.hosted} ${t("hosted")}`), verified(l))),
       el("p", { style: "font-size:1.08rem;max-width:62ch" }, l.i18n[lang].description),
       el("ul.promise", {}, [["check", "freeCancel"], ["chart", "trustPrice"], ["globe", "trustTalk"]].map(([i, k]) => el("li", {}, icon(i, 26), t(k)))),
-      l.reviewList.length > 0 && el("section.card", {}, el("h2", {}, t("reviews")), l.reviewList.map((r) => el("div.review", {}, el("div.row", {}, el("span.star", { "aria-label": `${r.rating} / 5` }, "★".repeat(r.rating)), el("b", {}, r.by), el("span.muted.small", {}, r.date)), r.text && el("p", { dir: "auto", lang: r.lang }, r.text))))),
+      l.reviewList.length > 0 && el("section.card", {}, el("h2", {}, t("reviews")), l.reviewList.map((r) => el("div.review", {}, el("div.row", {}, el("span.star", { "aria-label": `${r.rating} / 5` }, "★".repeat(r.rating)), el("b", {}, r.by), el("span.muted.small", {}, r.date)), r.text && el("p", { dir: "auto", lang: r.lang }, r.text)))),
+      el("div", {}, el("button.ghost.mini.text", { type: "button", onclick: () => reportForm(l) }, icon("flag", 18), t("report")))),
     form), similar);
   if (bar) {
     app.append(bar);
@@ -206,6 +211,27 @@ async function detail(id, lid) {
   }
   const rest = (await api("/api/listings?log=0").catch(() => [])).filter((x) => x.id !== l.id).map((x) => [x, (x.category === l.category) * 2 + (x.region === l.region)]).filter(([, s]) => s).sort((a, b) => b[1] - a[1]).slice(0, 4);
   if (id === renderId && rest.length) similar.replaceChildren(el("h2", {}, t("similar")), el("div.grid", {}, rest.map(([x]) => card(x))));
+}
+
+function reportForm(l) {
+  const reason = el("select", {}, ["r_unsafe", "r_false", "r_offensive", "r_other"].map((r) => el("option", { value: r.slice(2) }, t(r)))), text = el("textarea", { maxlength: 600 });
+  const d = el("dialog", { "aria-label": t("report") }, el("form.stack", { onsubmit: (e) => { e.preventDefault(); send({ currentTarget: e.submitter }); } }, el("h2", {}, t("report")), el("label", {}, t("report"), reason), el("label", {}, t("reportText"), text), el("div.row", {}, el("button", { type: "button", onclick: () => d.close() }, t("close")), el("button.primary", { type: "submit" }, t("send")))));
+  const send = run(async () => { await api(`/api/listings/${l.id}/report`, { reason: reason.value, details: text.value.trim() || null }); d.close(); toast(t("reported")); });
+  d.onclose = () => d.remove();
+  document.body.append(d);
+  d.showModal();
+}
+
+// ---- one host ---------------------------------------------------------------------------------
+async function hostPage(id, hid) {
+  const h = await api(`/api/providers/${encodeURIComponent(hid)}`);
+  if (id !== renderId) return;
+  document.title = `${h.name} | SilkRoad`;
+  const since = fmt({ month: "long", year: "numeric" }).format(asDate(`${h.since}-01`));
+  page(back(), el("div.who.big", {}, el("span.avatar", { "aria-hidden": "true" }, [...h.name][0].toUpperCase()), el("div.stack", { style: "gap:6px" }, el("h1", {}, h.name),
+    el("div.row", {}, el("span.muted", {}, cfg.providerTypes[h.type][lang]), verified(h), h.demo && el("span.badge", {}, t("sample"))),
+    el("ul.specs.small", {}, [h.reviews > 0 && [star(), `${h.rating} (${h.reviews})`], h.hosted > 0 && [icon("people", 18), `${h.hosted} ${t("hosted")}`], h.reply_hours && [icon("clock", 18), `${t("replies")} ${h.reply_hours} ${t("hour")}`], [icon("calendar", 18), `${t("hostSince")} ${since}`]].filter(Boolean).map((x) => el("li", {}, x))))),
+    el("div.grid", {}, h.listings.map((l) => card(l, "h2.sm"))));
 }
 
 // ---- one booking ----------------------------------------------------------------------------
@@ -264,13 +290,16 @@ async function bookingView(id, token) {
   let last = "";
   const draft = el("input", { maxlength: 1000, "aria-label": t("ask"), placeholder: t("ask"), required: true });
   const load = async (force) => {
-    const b = await api(`/api/bookings/${encodeURIComponent(token)}`);
+    let b = await api(`/api/bookings/${encodeURIComponent(token)}`);
+    // Back from the payment page: the server asks Octo, the address bar is never trusted.
+    if (!last && b.status === "pending" && b.payment?.provider === "octo") b = await api(`/api/bookings/${encodeURIComponent(token)}/refresh`, {}).catch(() => b);
     if (id !== renderId) return;
     const sig = JSON.stringify(b);
     if (sig === last && !force) return;
     // A poll must not wipe a half-finished date change or review.
     if (last && !force && app.querySelector(".movebox")) return;
     if (last && !force && b.can_review && document.activeElement?.closest?.("textarea, .stars")) return;
+    if (last && !force && document.querySelector("dialog[open]")) return;
     last = sig;
     const focused = document.activeElement === draft, i = b.i18n[lang];
     const tone = { confirmed: ".ok", declined: ".bad", expired: ".bad", cancelled: ".bad", pending: ".warn" }[b.status] ?? "";
@@ -278,13 +307,18 @@ async function bookingView(id, token) {
     const send = (body) => run(async () => { await api(`/api/bookings/${b.token}/messages`, body()); draft.value = ""; await load(true); });
     const chatOpen = ["paid", "confirmed"].includes(b.status);
     document.title = `${i.title} | SilkRoad`;
-    page(link({ my: 1 }, "a.back", {}, t("myBookings")), el("div.two", {},
+    page(el("div.row", {}, link({ my: 1 }, "a.back", {}, t("myBookings")), b.trip && link({ trip: b.trip }, "a.back", {}, t("tripMine"))), el("div.two", {},
       el("div.card", {}, el("h1", {}, i.title),
         stage > 0 && el("ol.track", {}, ["stepReserved", "stepPaid", "stepConfirmed"].map((k, n) => el("li" + (n < stage ? ".done" : ""), {}, t(k)))),
-        el("div.note" + tone, { role: "status" }, t(b.status), b.expires_at && el("div.small", {}, `${t("holdUntil")} ${new Intl.DateTimeFormat(lang, { hour: "2-digit", minute: "2-digit" }).format(new Date(b.expires_at))}`)),
+        el("div.note" + tone, { role: "status" }, t(b.status), b.expires_at && el("div.small", {}, `${t("holdUntil")} ${clockTime(b.expires_at)}`), b.decide_by && el("div.small", {}, `${t("decideBy")} ${clockTime(b.decide_by)}. ${t("decideNote")}`)),
+        ["refund_due", "refunded"].includes(b.payment?.status) && el("div.note" + (b.payment.status === "refunded" ? ".ok" : ""), { role: "status" }, t(b.payment.status === "refunded" ? "refunded" : "refundDue")),
+        b.status === "pending" && ["failed", "cancelled"].includes(b.payment?.status) && el("div.note.bad", { role: "status" }, t("payFail")),
         el("dl.facts", {}, [[t("date"), longDate(b.date)], [t("time"), b.time], [t("guests"), String(b.guests)], [t("name"), b.guest_name], [t("where"), placeOf(b)]].map(([k, v]) => el("div", {}, el("dt", {}, k), el("dd", {}, v)))),
         el("dl.sum", {}, [[t("toHost"), b.host_uzs], ...(b.hotel ? [[b.hotel, b.hotel_uzs]] : []), ["SilkRoad", b.platform_uzs]].map(([k, v]) => [el("dt", {}, k), el("dd", {}, money(v))]), el("dt.all", {}, t("total")), el("dd.all", {}, money(b.total_uzs))),
-        b.status === "pending" && cfg.testPayments && el("button.primary.wide", { onclick: run(async () => { await api(`/api/bookings/${b.token}/pay-test`, {}); await load(true); }) }, t("pay")),
+        b.status === "pending" && cfg.payMethods.length > 0 && el("fieldset.pay", {}, el("legend", {}, t("payWith")), cfg.payMethods.map((method, n) => el("button" + (n ? "" : ".primary") + ".wide", { type: "button", onclick: run(async () => {
+          const r = await api(`/api/bookings/${b.token}/pay`, { method });
+          if (r.url) location.href = r.url; else await load(true);
+        }) }, PAY_NAME[method] ? [icon("wallet", 20), PAY_NAME[method]] : t("pay"))), cfg.payMethods.some((m) => PAY_NAME[m]) && el("p.small.muted.row", {}, icon("shield", 18), t("paySafe"))),
         el("div.row", {},
           chatOpen && el("a.btn", { href: `/api/bookings/${b.token}/calendar.ics` }, icon("calendar", 20), t("calendar")),
           el("button", { onclick: async () => { if (await copy(`${location.origin}/?b=${b.token}`)) toast(t("copied")); } }, t("copyLink")),
@@ -311,10 +345,11 @@ async function bookingView(id, token) {
 
 // ---- my bookings and saved --------------------------------------------------------------------
 async function mine(id) {
+  const trips = (await Promise.all(store.json("trips", []).map((x) => api(`/api/trips/${encodeURIComponent(x)}`).catch(() => null)))).filter((x) => x?.bookings.length);
   const tokens = store.json("bookings", []);
   const found = (await Promise.all(tokens.map((x) => api(`/api/bookings/${encodeURIComponent(x)}`).catch(() => null)))).filter(Boolean);
   if (id !== renderId) return;
-  page(el("h1", {}, t("myBookings")), found.length
+  page(el("h1", {}, t("myBookings")), trips.length > 0 && el("div.grid", {}, trips.map((x) => link({ trip: x.token }, "a.card.triplink", {}, icon("route", 26), el("b", {}, t("tripMine")), el("span.muted.small", {}, `${longDate(x.bookings[0].date)} · ${x.bookings.length} × ${t("ticket")}`), x.waiting > 0 && el("span.badge.warn", {}, `${x.waiting} ${t("tripLeft")}`)))), found.length
     ? el("div.grid", {}, found.map((b) => el("article.tile-l", {}, link({ b: b.token }, "a", {}, el("div.art", {}, visual({ ...b, id: b.listing_id }), el("span.badge" + ({ confirmed: ".ok", pending: ".warn", declined: ".bad", expired: ".bad", cancelled: ".bad" }[b.status] ?? ""), {}, t(b.status))),
       el("div.stack", { style: "gap:4px" }, el("h2.sm", {}, b.i18n[lang].title), el("div.meta", {}, `${longDate(b.date)}, ${b.time}`), el("span.price", {}, money(b.total_uzs)))))))
     : el("div.card.empty", {}, plate("bron", "bread"), el("p", {}, t("noBookings")), link({}, "a.btn.primary", {}, t("explore"))));
@@ -327,9 +362,9 @@ async function saved(id) {
 
 // ---- shell ------------------------------------------------------------------------------------
 function chrome(q) {
-  const here = q.has("my") || q.has("b") ? "my" : q.has("saved") ? "saved" : "explore";
-  const items = [["explore", "search", {}], ["saved", "heart", { saved: 1 }], ["my", "ticket", { my: 1 }]];
-  const label = { explore: "explore", saved: "saved", my: "myBookings" };
+  const here = q.has("my") || q.has("b") || q.has("trip") ? "my" : q.has("saved") ? "saved" : q.has("plan") ? "trip" : "explore";
+  const items = [["explore", "search", {}], ["trip", "route", { plan: 1 }], ["saved", "heart", { saved: 1 }], ["my", "ticket", { my: 1 }]];
+  const label = { explore: "explore", trip: "trip", saved: "saved", my: "myBookings" };
   const build = (size) => [...items.map(([k, i, p]) => link(p, "a", { "aria-current": k === here ? "page" : null }, icon(i, size), t(label[k]))), el("a", { href: "/mezbon" }, icon("user", size), t("forHosts"))];
   document.getElementById("nav").replaceChildren(...build(19));
   document.getElementById("bottom").replaceChildren(...build(23));
@@ -337,6 +372,8 @@ function chrome(q) {
   document.getElementById("foot").textContent = cfg.testPayments ? `${t("tagline")} ${t("testNote")}` : t("tagline");
   document.getElementById("prefs").replaceChildren(installButton(t("install")), themePicker({ theme: t("theme"), auto: t("auto"), light: t("light"), dark: t("dark") }), el("a.back", { href: "/panel" }, "Talab paneli"));
 }
+
+const tripCtx = () => ({ t, cfg, lang, run, why, money, longDate, regionName, placeOf, link, page, back, go, hotel, addDays, today, copy, alive: (id) => id === renderId, every: (fn, ms) => { poll = setInterval(() => { if (!document.hidden) fn().catch(() => {}); }, ms); } });
 
 async function render() {
   const id = ++renderId;
@@ -352,6 +389,9 @@ async function render() {
   try {
     if (q.get("b") && q.has("ticket")) await ticketPage(id, q.get("b"));
     else if (q.get("b")) await bookingView(id, q.get("b"));
+    else if (q.get("trip")) await tripPage(tripCtx(), id, q.get("trip"));
+    else if (q.has("plan")) planner(tripCtx(), id);
+    else if (q.get("host")) await hostPage(id, q.get("host"));
     else if (q.get("l")) await detail(id, q.get("l"));
     else if (q.has("my")) await mine(id);
     else if (q.has("saved")) await saved(id);
@@ -362,5 +402,5 @@ async function render() {
     page(back(), el("div.note.bad", { role: "alert" }, why(e)));
   }
 }
-for (const ev of ["online", "offline"]) addEventListener(ev, () => { if (!app.querySelector("form :focus, .movebox")) render(); });
+for (const ev of ["online", "offline"]) addEventListener(ev, () => { if (!app.querySelector("form :focus, .movebox, .route")) render(); });
 render();

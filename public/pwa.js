@@ -23,8 +23,8 @@ export function installButton(text) {
 }
 
 export const pushSupported = () => "serviceWorker" in navigator && "PushManager" in window && "Notification" in window;
-/** target: { path: "/api/push/host", key } or { path: "/api/push/guest/<token>" }. Returns true when on. */
-export async function enablePush({ path, key }) {
+/** target: { path: "/api/push/host" } or { path: "/api/push/guest/<token>" }. Returns true when on. */
+export async function enablePush({ path }) {
   if (!pushSupported() || (await Notification.requestPermission()) !== "granted") return false;
   const reg = await worker;
   if (!reg) return false;
@@ -36,6 +36,6 @@ export async function enablePush({ path, key }) {
   const same = sub && btoa(String.fromCharCode(...new Uint8Array(sub.options.applicationServerKey ?? []))).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "") === pub;
   if (sub && !same) { await sub.unsubscribe(); sub = null; }
   try { sub ??= await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: raw }); } catch { return false; }
-  await api(path, { subscription: sub.toJSON() }, key);
+  await api(path, { subscription: sub.toJSON() });
   return true;
 }

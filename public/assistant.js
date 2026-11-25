@@ -7,14 +7,14 @@ const STARTERS = ["Bugun kimlar keladi?", "Oxirgi 30 kun daromadim qancha?", "Er
 let log = [];
 export const forget = () => { log = []; };
 
-export function assistant({ key, cfg, reload, speak }) {
+export function assistant({ cfg, reload, speak }) {
   const box = el("div.stack", { style: "gap:22px" }, el("p.muted", { role: "status" }, "Yuklanmoqda…"));
 
   /** One proposed change with its own approve button. */
   const proposal = (p, after) => {
     const row = el("div.proposal", {}, el("span", {}, p.label));
     row.append(el("button.primary", { onclick: act(async () => {
-      const r = await api("/api/host/assistant/apply", { ...p.action }, key);
+      const r = await api("/api/host/assistant/apply", { ...p.action });
       p.done = true;
       row.replaceChildren(el("span", {}, p.label), el("span.badge.ok", {}, "Bajarildi"));
       await reload();
@@ -47,7 +47,7 @@ export function assistant({ key, cfg, reload, speak }) {
     feed.scrollTo(0, 1e6);
     go.disabled = input.disabled = true;
     try {
-      const r = await api("/api/host/assistant", { text, history }, key);
+      const r = await api("/api/host/assistant", { text, history });
       log.push({ role: "assistant", text: r.reply, actions: r.actions, chips: r.chips, note: r.note });
       if (cfg.ai) left.textContent = `Bugun yana ${r.left} ta AI so‘rov`;
     } catch (e) { log.push({ role: "assistant", text: e.message }); }
@@ -76,7 +76,7 @@ export function assistant({ key, cfg, reload, speak }) {
   // ---- brief ----
   async function refresh() {
     let b;
-    try { b = await api("/api/host/assistant", null, key); }
+    try { b = await api("/api/host/assistant"); }
     catch (e) { return box.replaceChildren(el("div.note.bad", { role: "alert" }, e.message), el("button", { onclick: refresh }, "Qayta urinish")); }
     mode.textContent = b.ai ? "Claude AI" : "Oddiy rejim";
     mode.className = "badge " + (b.ai ? "ok" : "warn");

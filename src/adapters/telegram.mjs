@@ -1,9 +1,7 @@
-// Telegram bot for hosts (long polling). Runs alongside the web server; both use the same database.
-import { pathToFileURL } from "node:url";
-import { openDb } from "./db.mjs";
-import { createCore } from "./core.mjs";
-import { REGIONS } from "./i18n.mjs";
-import { extractFacts, norm } from "./extract.mjs";
+// Telegram bot for providers (long polling), started by the web server when a bot token is configured.
+import { asHost } from "../domain/accounts.mjs";
+import { REGIONS } from "../lib/i18n.mjs";
+import { extractFacts, norm } from "../ai/extract.mjs";
 
 const ASK = {
   price_uzs: "So‘mda yozing, masalan: 150000",
@@ -33,16 +31,16 @@ export function createBot(core, send, { baseUrl = "http://localhost:4321" } = {}
     if (!msg || (msg.chat.type && msg.chat.type !== "private")) return;
     const chat = String(msg.chat.id);
     const from = u.message?.from ?? u.callback_query?.from;
-    const host = core.hostByTelegram(chat) ?? core.createHost((from?.first_name || "Mezbon").slice(0, 60), { telegramChat: chat });
     try {
+      const host = (await core.hostByTelegram(chat)) ?? (await core.createHost((from?.first_name || "Mezbon").slice(0, 60), { telegramChat: chat })), me = asHost(host.id);
       if (u.callback_query) {
         const [act, lid] = String(u.callback_query.data).split(":");
         if (act === "acc" || act === "dec") {
-          core.decide(host.key, lid, act === "acc");
+          await core.decide(me, lid, act === "acc");
           return await send(chat, act === "acc" ? "Bron qabul qilindi" : "Bron rad etildi");
         }
         if (act !== "pub") return;
-        core.publish(host.key, lid);
+        await core.publish(me, lid);
         return await send(chat, `E’lon qilindi: ${baseUrl}/?l=${lid}`);
       }
       if (msg.voice) return await send(chat, "Bu versiyada ovozli xabar matnga aylantirilmaydi. Klaviaturadagi mikrofon orqali aytib, matn qilib yuboring.");
@@ -50,15 +48,16 @@ export function createBot(core, send, { baseUrl = "http://localhost:4321" } = {}
       if (!text) return;
       if (text === "/start") {
         waiting.delete(chat);
-        return await send(chat, "Assalomu alaykum! Nima o‘rgatasiz, qayerda, qancha vaqt, narxi va necha kishi? Bir xabarda yozing.\nMasalan: Rishtonda kulolman, ikki soat, 150 ming so‘m, 8 kishi");
+        return await send(chat, "Assalomu alaykum! Nima o‘rgatasiz, qayerda, qancha vaqt, narxi va necha kishi? Bir xabarda yozing.\nMasalan: Rishtonda kulolman, ikki soat, 150 ming so‘m, 8 kishi\n\nVeb-kabinetga kirish: /kirish");
       }
+      if (text === "/kirish") return await send(chat, `Kabinetga kirish havolasi. 15 daqiqa ichida va faqat bir marta ishlaydi, uni hech kimga yubormang:\n${baseUrl}/mezbon#kirish=${await core.loginLink(me)}`);
       const w = waiting.get(chat);
       if (w) {
         const value = w.field === "cert_no" ? text : w.field === "region" ? regionOf(text) : Number(text.replace(/\D/g, ""));
-        return await next(chat, core.updateListing(host.key, w.lid, { [w.field]: value }));
+        return await next(chat, await core.updateListing(me, w.lid, { [w.field]: value }));
       }
       await send(chat, "Tayyorlayapman…");
-      return await next(chat, await core.createDraft(host.key, text));
+      return await next(chat, await core.createDraft(me, text));
     } catch (e) {
       if (!e.status) console.error(e);
       return send(chat, e.status ? e.message : "Xato yuz berdi, qayta urinib ko‘ring");
@@ -70,6 +69,7 @@ export function createBot(core, send, { baseUrl = "http://localhost:4321" } = {}
 export function bookingNotice(b, type) {
   if (type === "booking" || type === "moved") return [`${type === "moved" ? "Mehmon vaqtni o‘zgartirdi" : "Yangi bron"}: ${b.title}\n${b.guest_name}, ${b.guests} kishi\n${b.date}, soat ${b.time}\nSizga: ${b.host_uzs.toLocaleString("ru-RU")} so‘m`,
     [[{ text: "Qabul qilish", callback_data: `acc:${b.id}` }, { text: "Rad etish", callback_data: `dec:${b.id}` }]]];
+  if (type === "unanswered") return [`Javob berilmagani uchun bron rad etildi va pul qaytarildi: ${b.title}\n${b.guest_name}, ${b.date}, soat ${b.time}`];
   if (type === "cancelled") return [`Bron bekor qilindi: ${b.title}\n${b.guest_name}, ${b.date}, soat ${b.time}`];
   return [`Mehmondan xabar (${b.guest_name}): ${b.messages.findLast((m) => m.sender === "guest")?.translated ?? ""}`];
 }
@@ -80,31 +80,23 @@ export const telegramSender = (token) => async (chat_id, text, keyboard) =>
     body: JSON.stringify({ chat_id, text, ...(keyboard && { reply_markup: { inline_keyboard: keyboard } }) }),
   })).json();
 
-if (import.meta.url === pathToFileURL(process.argv[1] ?? "").href) {
-  const token = process.env.TELEGRAM_BOT_TOKEN;
-  if (!token) {
-    console.error("TELEGRAM_BOT_TOKEN .env faylida yo‘q");
-    process.exit(1);
-  }
-  const tg = async (method, body) => (await fetch(`https://api.telegram.org/bot${token}/${method}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) })).json();
-  const handle = createBot(createCore(openDb()), telegramSender(token),{ baseUrl: process.env.MEZBON_URL });
-  const pause = () => new Promise((s) => setTimeout(s, 5000));
-  console.log("Telegram bot ishga tushdi");
+/** Reads updates until `signal` is aborted. Only one server may poll a bot at a time. */
+export async function runBot(core, token, { baseUrl, signal }) {
+  const tg = async (method, body) => (await fetch(`https://api.telegram.org/bot${token}/${method}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body), signal: AbortSignal.any([signal, AbortSignal.timeout(45_000)]) })).json();
+  const handle = createBot(core, telegramSender(token), { baseUrl });
+  const pause = () => new Promise((s) => setTimeout(s, 5000).unref());
   let offset = 0;
-  for (;;) {
+  while (!signal.aborted) {
     try {
       const r = await tg("getUpdates", { offset, timeout: 30 });
-      if (!r.ok) {
-        console.error("Telegram:", r.description);
-        await pause();
-        continue;
-      }
+      if (!r.ok) { console.error("Telegram:", r.description); await pause(); continue; }
       for (const u of r.result) {
         offset = u.update_id + 1;
         if (u.callback_query) await tg("answerCallbackQuery", { callback_query_id: u.callback_query.id });
         await handle(u);
       }
     } catch (e) {
+      if (signal.aborted) return;
       console.error("Telegram ulanish xatosi:", e.cause?.code ?? e.name);
       await pause();
     }

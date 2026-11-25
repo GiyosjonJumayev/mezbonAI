@@ -1,9 +1,10 @@
 // AI Business Assistant. It reads the provider's own business and proposes actions.
 // Nothing changes until the provider approves an action; every action runs through the same core functions as the buttons.
 import { z } from "zod";
-import { LANGS, LANG_NAMES } from "./i18n.mjs";
-import { extractFacts, norm, readNumber } from "./extract.mjs";
-import { aiEnabled, ask, errText } from "./ai.mjs";
+import { LANGS, LANG_NAMES } from "../lib/i18n.mjs";
+import { extractFacts, norm, readNumber } from "../ai/extract.mjs";
+import { aiEnabled, ask, errText } from "../ai/claude.mjs";
+import { fail, isDate, tashkentNow, today } from "../lib/util.mjs";
 
 const som = (n) => `${Math.round(n).toString().replace(/\B(?=(\d{3})+$)/g, " ")} so‘m`;
 const MONTHS = ["yanvar", "fevral", "mart", "aprel", "may", "iyun", "iyul", "avgust", "sentabr", "oktabr", "noyabr", "dekabr"];
@@ -76,18 +77,19 @@ export function quality(l) {
   return { score: checks.reduce((s, [w, ok]) => s + (ok ? w : 0), 0), next: checks.filter(([, ok]) => !ok).map(([, , t]) => t) };
 }
 
-export function createAssistant({ core, one, run, today, tashkentNow, addDays, isDate, fail }) {
+/** `core` is the same set of operations the buttons use. */
+export function createAssistant({ db, core }) {
   const need = (v, text) => { if (v == null || v === "") throw fail(400, text); return v; };
 
-  function state(key) {
-    const home = core.hostHome(key);
+  async function state(key) {
+    const home = await core.hostHome(key);
     const listing = (id) => need(home.listings.find((l) => l.id === id), "Taklif topilmadi");
     const booking = (id) => need(home.bookings.find((b) => b.id === id), "Bron topilmadi");
     return { home, listing, booking };
   }
 
   /** Checks an action against the provider's own data and says what it would do. Throws when it is not possible. */
-  function describe(key, a, s = state(key)) {
+  function describe(a, s) {
     const L = () => s.listing(a.listing_id), B = () => s.booking(a.booking_id);
     const future = () => { if (!isDate(a.date) || a.date < today()) throw fail(400, "Sana noto‘g‘ri"); return uzDay(a.date); };
     const slot = (l) => { if (!l.times.includes(a.time)) throw fail(400, "Bu vaqt jadvalda yo‘q"); };
@@ -107,28 +109,28 @@ export function createAssistant({ core, one, run, today, tashkentNow, addDays, i
   }
   const clean = (a) => Object.fromEntries(Object.keys(Action.shape).map((k) => [k, a?.[k] ?? null]));
   /** Keeps only possible actions, each with a plain description. */
-  function propose(key, list, s) {
+  function propose(list, s) {
     const out = [];
-    for (const raw of list.slice(0, 10)) { const a = clean(raw); try { out.push({ action: a, label: describe(key, a, s) }); } catch {} }
+    for (const raw of list.slice(0, 10)) { const a = clean(raw); try { out.push({ action: a, label: describe(a, s) }); } catch {} }
     return out;
   }
 
   async function apply(key, raw) {
-    const a = clean(raw), label = describe(key, a);
+    const a = clean(raw), s = await state(key), label = describe(a, s);
     switch (a.type) {
-      case "set_price": core.updateListing(key, a.listing_id, { price_uzs: a.price_uzs }); break;
-      case "set_text": core.updateListing(key, a.listing_id, { text: { lang: a.lang, ...(a.title && { title: a.title }), ...(a.description && { description: a.description }) } }); break;
-      case "set_slot": core.setSlot(key, a.listing_id, { date: a.date, time: a.time, capacity: a.capacity }); break;
+      case "set_price": await core.updateListing(key, a.listing_id, { price_uzs: a.price_uzs }); break;
+      case "set_text": await core.updateListing(key, a.listing_id, { text: { lang: a.lang, ...(a.title && { title: a.title }), ...(a.description && { description: a.description }) } }); break;
+      case "set_slot": await core.setSlot(key, a.listing_id, { date: a.date, time: a.time, capacity: a.capacity }); break;
       case "close_day": case "open_day": {
-        const l = state(key).listing(a.listing_id), set = new Set(l.closed.filter((d) => d >= today()));
+        const l = s.listing(a.listing_id), set = new Set(l.closed.filter((d) => d >= today()));
         a.type === "close_day" ? set.add(a.date) : set.delete(a.date);
-        core.updateListing(key, a.listing_id, { closed: [...set] });
+        await core.updateListing(key, a.listing_id, { closed: [...set] });
         break;
       }
-      case "publish": core.publish(key, a.listing_id); break;
-      case "pause": core.pause(key, a.listing_id); break;
-      case "accept_booking": core.decide(key, a.booking_id, true); break;
-      case "decline_booking": core.decide(key, a.booking_id, false); break;
+      case "publish": await core.publish(key, a.listing_id); break;
+      case "pause": await core.pause(key, a.listing_id); break;
+      case "accept_booking": await core.decide(key, a.booking_id, true); break;
+      case "decline_booking": await core.decide(key, a.booking_id, false); break;
       case "reply_guest": await core.message("host", key, { booking_id: a.booking_id, text: a.text }); break;
       case "create_draft": return { done: "Qoralama tayyor. Tekshirib, e’lon qiling", link: `taklif/${(await core.createDraft(key, a.text)).id}` };
     }
@@ -136,24 +138,24 @@ export function createAssistant({ core, one, run, today, tashkentNow, addDays, i
   }
 
   // ---- daily brief (no AI needed) --------------------------------------------------------------------
-  function brief(key) {
-    const s = state(key), { home } = s, d = today(), tasks = [];
+  async function brief(key) {
+    const s = await state(key), { home } = s, d = today(), tasks = [];
     const add = (level, text, o = {}) => tasks.push({ level, text, ...o });
     const waiting = home.bookings.filter((b) => b.status === "paid");
-    if (waiting.length) add("now", `${waiting.length} ta bron javobingizni kutmoqda`, { link: "bronlar", actions: propose(key, waiting.filter((b) => !b.past).slice(0, 5).map((b) => ({ type: "accept_booking", booking_id: b.id })), s) });
+    if (waiting.length) add("now", `${waiting.length} ta bron javobingizni kutmoqda`, { link: "bronlar", actions: propose(waiting.filter((b) => !b.past).slice(0, 5).map((b) => ({ type: "accept_booking", booking_id: b.id })), s) });
     const asking = home.bookings.filter((b) => ["paid", "confirmed"].includes(b.status) && b.messages.at(-1)?.sender === "guest");
     for (const b of asking.slice(0, 3)) add("now", `${b.guest_name} so‘ramoqda: “${b.messages.at(-1).translated}”`, { link: "bronlar" });
     const live = home.listings.filter((l) => l.status === "published");
     if (!home.listings.length) add("now", "Birinchi taklifingizni yarating: hunaringiz haqida gapirib bering", { link: "yangi" });
-    for (const l of home.listings.filter((x) => x.status === "draft").slice(0, 3)) add("soon", l.missing.length ? `“${l.i18n.uz.title}” qoralamasi: ${l.missing[0].text}` : `“${l.i18n.uz.title}” qoralamasi tayyor, e’lon qilish mumkin`, { link: `taklif/${l.id}`, actions: l.missing.length ? [] : propose(key, [{ type: "publish", listing_id: l.id }], s) });
+    for (const l of home.listings.filter((x) => x.status === "draft").slice(0, 3)) add("soon", l.missing.length ? `“${l.i18n.uz.title}” qoralamasi: ${l.missing[0].text}` : `“${l.i18n.uz.title}” qoralamasi tayyor, e’lon qilish mumkin`, { link: `taklif/${l.id}`, actions: l.missing.length ? [] : propose([{ type: "publish", listing_id: l.id }], s) });
 
     for (const l of live) {
-      const days = core.slotCalendar(key, l.id, d, 14).days.filter((x) => x.open), clock = tashkentNow().slice(0, 16);
+      const days = (await core.slotCalendar(key, l.id, d, 14)).days.filter((x) => x.open), clock = tashkentNow().slice(0, 16);
       const slots = days.flatMap((x) => x.slots.map((t) => ({ ...t, date: x.date }))).filter((t) => `${t.date}T${t.time}` > clock);
       if (!slots.some((t) => t.capacity > t.booked)) add("now", `“${l.i18n.uz.title}”: 14 kunda birorta bo‘sh joy yo‘q`, { link: "kalendar" });
       for (const t of slots.filter((x) => x.capacity > 0 && x.booked >= x.capacity).slice(0, 2)) {
         const more = Math.min(100, t.capacity + Math.max(1, Math.round(l.capacity / 2)));
-        add("grow", `“${l.i18n.uz.title}”, ${uzDay(t.date)}, ${t.time} to‘ldi. Joy qo‘shasizmi?`, { actions: propose(key, [{ type: "set_slot", listing_id: l.id, date: t.date, time: t.time, capacity: more }], s) });
+        add("grow", `“${l.i18n.uz.title}”, ${uzDay(t.date)}, ${t.time} to‘ldi. Joy qo‘shasizmi?`, { actions: propose([{ type: "set_slot", listing_id: l.id, date: t.date, time: t.time, capacity: more }], s) });
       }
       const q = quality(l);
       if (q.score < 70) add("grow", `“${l.i18n.uz.title}” tayyorligi ${q.score}/100. ${q.next[0]}`, { link: `taklif/${l.id}` });
@@ -161,22 +163,21 @@ export function createAssistant({ core, one, run, today, tashkentNow, addDays, i
     if (home.plan.until && +new Date(home.plan.until) - Date.now() < 5 * 864e5) add("soon", "Tarif muddati 5 kundan kam qoldi", { link: "tarif" });
     const visits = home.bookings.filter((b) => b.date === d && b.status === "confirmed").sort((x, y) => x.time.localeCompare(y.time)).map((b) => ({ id: b.id, time: b.time, guest_name: b.guest_name, guests: b.guests, title: b.title, lang: b.lang, arrived: Boolean(b.checked_in_at) }));
     const order = { now: 0, soon: 1, grow: 2 };
-    return { ai: aiEnabled(), left: limitLeft(home), tasks: tasks.sort((x, y) => order[x.level] - order[y.level]), visits, quality: live.map((l) => ({ id: l.id, title: l.i18n.uz.title, ...quality(l) })) };
+    return { ai: aiEnabled(), left: await limitLeft(home), tasks: tasks.sort((x, y) => order[x.level] - order[y.level]), visits, quality: live.map((l) => ({ id: l.id, title: l.i18n.uz.title, ...quality(l) })) };
   }
 
   // ---- chat ------------------------------------------------------------------------------------------
-  const used = (hid) => one("SELECT n FROM assistant_usage WHERE host_id=? AND day=?", hid, today())?.n ?? 0;
-  const limitLeft = (home) => Math.max(0, home.plan.assistant - used(home.id));
+  const limitLeft = async (home) => Math.max(0, home.plan.assistant - ((await db.one("SELECT n FROM assistant_usage WHERE host_id=? AND day=?", home.id, today()))?.n ?? 0));
 
   /** What the model may see: the provider's own business, without guest names. */
-  function snapshot(key, s) {
-    const { home } = s, a = core.analytics(key, 30);
+  async function snapshot(key, s) {
+    const { home } = s, a = await core.analytics(key, 30);
     return {
       today: today(), provider: home.type, plan: home.plan.plan, commission_percent: home.plan.commission,
       last_30_days: { earned_uzs: a.totals.earned, waiting_uzs: a.totals.expected, bookings: a.totals.bookings, guests: a.totals.guests, views: a.totals.views, cancelled: a.totals.cancelled, previous_period_earned_uzs: a.previous.earned },
       listings: home.listings.slice(0, 20).map((l) => ({ id: l.id, status: l.status, title: l.i18n.uz.title, description: l.i18n.uz.description, category: l.category, region: l.region, place: l.place, price_uzs: l.price_uzs, duration_min: l.duration_min, capacity: l.capacity, weekdays: l.weekdays, times: l.times, closed_dates: l.closed.filter((x) => x >= today()), rating: l.rating, reviews: l.reviews, missing: l.missing.map((m) => m.text), readiness: quality(l) })),
       bookings: home.bookings.filter((b) => !b.past && ["paid", "confirmed"].includes(b.status)).slice(0, 30).map((b) => ({ id: b.id, listing_id: b.listing_id, status: b.status === "paid" ? "waiting_for_answer" : "confirmed", date: b.date, time: b.time, guests: b.guests, guest_language: b.lang, you_earn_uzs: b.host_uzs, last_guest_message: b.messages.at(-1)?.sender === "guest" ? b.messages.at(-1).translated : null })),
-      market: home.plan.intelligence ? (({ prices, unmet, tips }) => ({ prices: prices.filter((p) => p.median), unmet, tips }))(core.intelligence(key)) : "only in the Business plan",
+      market: home.plan.intelligence ? (({ prices, unmet, tips }) => ({ prices: prices.filter((p) => p.median), unmet, tips }))(await core.intelligence(key)) : "only in the Business plan",
     };
   }
 
@@ -184,25 +185,26 @@ export function createAssistant({ core, one, run, today, tashkentNow, addDays, i
     const text = typeof p.text === "string" ? p.text.trim() : "";
     if (!text) throw fail(400, "Savolingizni yozing");
     if (text.length > 1000) throw fail(400, "Savol juda uzun");
-    const s = state(key);
+    const s = await state(key);
     let note = null;
     if (aiEnabled()) {
-      if (limitLeft(s.home) <= 0) note = "Bugungi AI limiti tugadi, oddiy rejimda javob berildi";
+      // Counting and checking in one statement: many tabs at once cannot go over the limit.
+      const spent = await db.run("INSERT INTO assistant_usage (host_id,day,n) VALUES (?,?,1) ON CONFLICT (host_id,day) DO UPDATE SET n=assistant_usage.n+1 WHERE assistant_usage.n < ?", s.home.id, today(), s.home.plan.assistant);
+      if (!spent.changes) note = "Bugungi AI limiti tugadi, oddiy rejimda javob berildi";
       else {
-        run("INSERT INTO assistant_usage (host_id,day,n) VALUES (?,?,1) ON CONFLICT(host_id,day) DO UPDATE SET n=n+1", s.home.id, today());
         const history = (Array.isArray(p.history) ? p.history : []).slice(-8).filter((m) => ["user", "assistant"].includes(m?.role) && typeof m.text === "string").map((m) => `${m.role}: ${m.text.slice(0, 1000)}`).join("\n");
         try {
-          const out = await ask(Answer, SYSTEM, `<business>\n${JSON.stringify(snapshot(key, s))}\n</business>\n\n<conversation>\n${history}\n</conversation>\n\nProvider's new message:\n${text}`);
-          return { reply: out.reply, actions: propose(key, out.actions, s), engine: "claude", note, left: limitLeft(s.home) };
+          const out = await ask(Answer, SYSTEM, `<business>\n${JSON.stringify(await snapshot(key, s))}\n</business>\n\n<conversation>\n${history}\n</conversation>\n\nProvider's new message:\n${text}`);
+          return { reply: out.reply, actions: propose(out.actions, s), engine: "claude", note, left: await limitLeft(s.home) };
         } catch (e) { note = errText(e); console.error("[ai] assistant:", note); }
       }
     }
-    const r = offline(key, text, s);
-    return { reply: r.reply, actions: propose(key, r.actions ?? [], s), chips: r.chips ?? [], engine: "demo", note, left: limitLeft(s.home) };
+    const r = await offline(key, text, s);
+    return { reply: r.reply, actions: propose(r.actions ?? [], s), chips: r.chips ?? [], engine: "demo", note, left: await limitLeft(s.home) };
   }
 
   /** Understands a fixed set of Uzbek requests, so the assistant works with no internet and no key. */
-  function offline(key, text, s) {
+  async function offline(key, text, s) {
     const full = norm(text), { home } = s, d = readDate(text, today()), time = readTime(text);
     const active = home.listings.filter((l) => l.status !== "draft");
     // Words of a listing's own name must not count as a request: "Tandirda non yopish" is not "yop".
@@ -245,7 +247,7 @@ export function createAssistant({ core, one, run, today, tashkentNow, addDays, i
     if (/to'xtat|sotuvdan ol/.test(t)) return oneListing((l) => ({ reply: "To‘xtatishni tasdiqlang.", actions: [{ type: "pause", listing_id: l.id }] }), home.listings.filter((l) => l.status === "published"));
     if (/e'lon qil|sotuvga/.test(t)) return oneListing((l) => (l.missing.length ? { reply: `Avval to‘ldiring: ${l.missing.map((m) => m.text).join(" ")}` } : { reply: "E’lon qilishni tasdiqlang.", actions: [{ type: "publish", listing_id: l.id }] }), home.listings.filter((l) => l.status !== "published"));
     if (/daromad|(^| )pul|hisobot|natija|qancha ishla/.test(t)) {
-      const { totals: a, previous: b } = core.analytics(key, 30);
+      const { totals: a, previous: b } = await core.analytics(key, 30);
       const trend = b.earned ? ` Oldingi 30 kunda ${som(b.earned)} edi.` : "";
       return { reply: a.bookings || a.expected ? `Oxirgi 30 kunda ${a.bookings} ta tasdiqlangan bron, ${a.guests} mehmon, sizga ${som(a.earned)}.${trend}${a.expected ? ` Javob kutayotgan bronlarda yana ${som(a.expected)}.` : ""}` : "Oxirgi 30 kunda hali tasdiqlangan bron yo‘q." };
     }
@@ -254,12 +256,12 @@ export function createAssistant({ core, one, run, today, tashkentNow, addDays, i
       return { reply: v.length ? `${uzDay(d)}: ${v.map((b) => `${b.time} ${b.guest_name}, ${b.guests} kishi${b.status === "paid" ? " (javob kutmoqda)" : ""}`).join("; ")}.` : `${uzDay(d)} kuni bron yo‘q.` };
     }
     if (/talab|bozor|turist.* qidir/.test(t)) {
-      if (home.plan.intelligence) { const { tips } = core.intelligence(key); return { reply: tips.length ? tips.slice(0, 3).join(" ") : "Bozor bo‘yicha hozircha ma’lumot yetarli emas." }; }
-      const top = core.panel().regions.find((r) => r.unmet > 0);
+      if (home.plan.intelligence) { const { tips } = await core.intelligence(key); return { reply: tips.length ? tips.slice(0, 3).join(" ") : "Bozor bo‘yicha hozircha ma’lumot yetarli emas." }; }
+      const top = (await core.panel()).regions.find((r) => r.unmet > 0);
       return { reply: `${top ? `Eng ko‘p javobsiz qidiruv: ${top.name} (${top.unmet}). ` : ""}Narx taqqosi va mashg‘ulotlar bo‘yicha talab Business tarifida.` };
     }
     if (/maslahat|tavsiya|nima qil|yordam|qanday.*(osh|ko'pay)/.test(t)) {
-      const b = brief(key).tasks.slice(0, 4);
+      const b = (await brief(key)).tasks.slice(0, 4);
       return { reply: b.length ? b.map((x, i) => `${i + 1}. ${x.text}`).join("\n") : "Hammasi joyida: javobsiz bron ham, kamchilik ham yo‘q.", actions: b.flatMap((x) => (x.actions ?? []).map((y) => y.action)) };
     }
     const f = extractFacts(text);
