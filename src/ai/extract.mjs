@@ -1,5 +1,5 @@
 // Rule-based Uzbek extraction. Used when no AI key is set or the AI call fails.
-import { CATEGORIES, DESC, LANGS, REGIONS, REGION_NAMES } from "./i18n.mjs";
+import { CATEGORIES, DESC, LANGS, REGIONS, REGION_NAMES } from "../lib/i18n.mjs";
 
 export const norm = (s) => s.toLowerCase().replace(/[‘’ʻʼ`´]/g, "'").replace(/\s+/g, " ").trim();
 

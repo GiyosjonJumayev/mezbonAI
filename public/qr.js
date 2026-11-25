@@ -1,5 +1,8 @@
 import { api, el } from "/common.js";
 
+import { themePicker } from "/pwa.js";
+
+document.getElementById("prefs").append(themePicker({ theme: "Mavzu", auto: "Avtomatik", light: "Yorug‘", dark: "Qorong‘i" }));
 const app = document.getElementById("app");
 const local = ["localhost", "127.0.0.1"].includes(location.hostname);
 try {

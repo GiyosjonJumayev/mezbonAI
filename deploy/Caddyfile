@@ -1,0 +1,10 @@
+{$SITE_DOMAIN} {
+	encode zstd gzip
+	request_body {
+		max_size 5MB
+	}
+	reverse_proxy app:4321 {
+		# Event streams must not be buffered.
+		flush_interval -1
+	}
+}

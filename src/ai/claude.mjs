@@ -1,7 +1,7 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { betaZodOutputFormat } from "@anthropic-ai/sdk/helpers/beta/zod";
 import { z } from "zod";
-import { CATEGORIES, LANGS, LANG_NAMES, PHRASES, REGIONS } from "./i18n.mjs";
+import { CATEGORIES, LANGS, LANG_NAMES, PHRASES, REGIONS } from "../lib/i18n.mjs";
 import { extractFacts, templateI18n } from "./extract.mjs";
 
 const MODEL = process.env.ANTHROPIC_MODEL || "claude-opus-5-5";

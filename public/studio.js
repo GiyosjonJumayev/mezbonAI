@@ -1,5 +1,5 @@
 // Provider studio: slot calendar, ticket check-in, revenue analytics, market intelligence, plans.
-import { act, api, ask, el, plate, som, toast } from "/common.js";
+import { PAY_NAME, act, api, ask, el, plate, som, toast } from "/common.js";
 
 const MONTHS = ["yanvar", "fevral", "mart", "aprel", "may", "iyun", "iyul", "avgust", "sentabr", "oktabr", "noyabr", "dekabr"];
 const WEEK = ["Yak", "Du", "Se", "Chor", "Pay", "Ju", "Shan"];
@@ -11,7 +11,7 @@ const STATUS = { confirmed: "Tasdiqlangan", paid: "Javob kutilmoqda", declined: 
 const pct = (x) => (x == null ? "—" : `${Math.round(x * 100)}%`);
 const card = (title, ...kids) => el("section.card", {}, el("h2", {}, title), ...kids);
 const tiles = (list) => el("div.tiles", {}, list.map(([k, v, sub]) => el("div.card.tile", {}, el("b", {}, v), el("span.muted", {}, k), sub && el("span.small.muted", {}, sub))));
-const table = (head, rows) => el("div.scroll", {}, el("table", {}, el("thead", {}, el("tr", {}, head.map(([h, n]) => el(n ? "th.n" : "th", { scope: "col" }, h)))), el("tbody", {}, rows.map((r) => el("tr", {}, r.map((c, i) => el(head[i][1] ? "td.n" : "td", {}, c)))))));
+const table = (head, rows) => el("div.scroll", { tabindex: 0 }, el("table", {}, el("thead", {}, el("tr", {}, head.map(([h, n]) => el(n ? "th.n" : "th", { scope: "col" }, h)))), el("tbody", {}, rows.map((r) => el("tr", {}, r.map((c, i) => el(head[i][1] ? "td.n" : "td", {}, c)))))));
 const lock = (text) => el("div.card.empty", {}, plate("qulf", "metal"), el("p", {}, text), el("a.btn.primary", { href: "#tarif" }, "Tariflarni ko‘rish"));
 
 /** A view that loads its own data; it shows errors in place and ignores answers that arrive after it was replaced. */
@@ -28,7 +28,7 @@ function live(load) {
 }
 
 // ---- availability calendar ------------------------------------------------------------------------
-export function calendar({ key, home }) {
+export function calendar({ home }) {
   const mine = home.listings.filter((l) => l.status !== "draft");
   if (!mine.length) return el("div.card.empty", {}, plate("kalendar", "carpet"), el("h2", {}, "Kalendar bo‘sh"), el("p.muted", {}, "Taklif e’lon qilgach, har bir vaqtdagi joylarni shu yerda boshqarasiz."), el("a.btn.primary", { href: "#yangi" }, "Taklif qo‘shish"));
   let lid = mine[0].id, from = "";
@@ -37,10 +37,10 @@ export function calendar({ key, home }) {
   let view;
   const box = live(async (refresh) => {
     view = refresh;
-    const c = await api(`/api/host/listings/${lid}/calendar?days=14${from ? `&from=${from}` : ""}`, null, key);
-    const set = (d, s, capacity) => act(async () => { await api(`/api/host/listings/${lid}/slot`, { date: d.date, time: s.time, capacity }, key); await refresh(); });
+    const c = await api(`/api/host/listings/${lid}/calendar?days=14${from ? `&from=${from}` : ""}`);
+    const set = (d, s, capacity) => act(async () => { await api(`/api/host/listings/${lid}/slot`, { date: d.date, time: s.time, capacity }); await refresh(); });
     return [c.status === "paused" && el("div.note.warn", {}, "Bu taklif to‘xtatilgan, yangi bron qabul qilinmaydi."),
-      el("div.cal", {}, c.days.map((d) => el("section.day" + (d.open ? "" : ".off"), { "aria-label": day(d.date) }, el("h3", {}, `${weekday(d.date)}, ${day(d.date)}`),
+      el("div.cal", {}, c.days.map((d) => el("section.day" + (d.open ? "" : ".off"), { "aria-label": day(d.date) }, el("h2.sm", {}, `${weekday(d.date)}, ${day(d.date)}`),
         d.open ? d.slots.map((s) => {
           const full = s.booked >= s.capacity, over = s.booked > s.capacity;
           return el("div.slot" + (s.capacity === 0 ? ".shut" : ""), {}, el("div.row.between", {}, el("b", {}, s.time), el("span.badge" + (over ? ".bad" : s.capacity === 0 ? "" : full ? ".warn" : ".ok"), {}, s.capacity === 0 ? "Yopiq" : `${s.booked} / ${s.capacity}`)),
@@ -56,17 +56,17 @@ export function calendar({ key, home }) {
 export const ticketCode = (text) => /chipta\/([0-9A-F-]{12,16})/i.exec(text)?.[1] ?? text;
 const STATE = { valid: ["Yaroqli. Bugungi bron", ".ok"], used: ["Allaqachon ishlatilgan", ".bad"], early: ["Boshqa kun uchun", ".warn"], late: ["Muddati o‘tgan", ".bad"], void: ["Bron bekor qilingan", ".bad"] };
 
-export function tickets({ key, cfg, reload }, code) {
+export function tickets({ cfg, reload }, code) {
   const input = el("input", { autocapitalize: "characters", autocomplete: "off", spellcheck: "false", placeholder: "XXXX-XXXX-XXXX", maxlength: 200, required: true, value: code ?? "" });
   const out = el("div.stack", { "aria-live": "polite" });
   async function check(raw) {
     out.replaceChildren(el("p.muted", {}, "Tekshirilmoqda…"));
     try {
-      const t = await api(`/api/host/tickets/${encodeURIComponent(ticketCode(raw).replace(/[^0-9a-f]/gi, "").slice(0, 12) || "x")}`, null, key);
+      const t = await api(`/api/host/tickets/${encodeURIComponent(ticketCode(raw).replace(/[^0-9a-f]/gi, "").slice(0, 12) || "x")}`);
       const [text, tone] = STATE[t.state];
       out.replaceChildren(el("div.card", {}, el("div.note" + tone, { role: "status" }, text, t.checked_in_at && t.state === "used" ? ` (${new Date(t.checked_in_at).toLocaleString("ru-RU")})` : ""),
         el("dl.facts", {}, [["Mehmon", `${t.guest_name}, ${t.guests} kishi`], ["Vaqt", `${day(t.date)}, ${t.time}`], ["Taklif", t.title], ["Tili", cfg.langNames[t.lang]]].map(([k, v]) => el("div", {}, el("dt", {}, k), el("dd", {}, v)))),
-        t.state === "valid" && el("button.primary", { onclick: act(async () => { await api(`/api/host/tickets/${t.code}/check-in`, {}, key); await reload(); toast(`${t.guest_name} qabul qilindi`); await check(t.code); }) }, `${t.guests} kishini qabul qilish`)));
+        t.state === "valid" && el("button.primary", { onclick: act(async () => { await api(`/api/host/tickets/${t.code}/check-in`, {}); await reload(); toast(`${t.guest_name} qabul qilindi`); await check(t.code); }) }, `${t.guests} kishini qabul qilish`)));
     } catch (e) { out.replaceChildren(el("div.note.bad", { role: "alert" }, e.message)); }
   }
   const scan = el("button.mic", { type: "button" }, el("i"), el("span", {}, "Kamera bilan skanerlash"));
@@ -112,14 +112,14 @@ function columns(series, bucket) {
 function busyTable(rows) {
   if (!rows.length) return el("p.muted", {}, "Bu davrda ma’lumot yo‘q.");
   const times = [...new Set(rows.map((r) => r.time))].sort(), max = Math.max(...rows.map((r) => r.guests)), at = new Map(rows.map((r) => [`${r.weekday}|${r.time}`, r.guests]));
-  return el("div.scroll", {}, el("table.heat", {}, el("thead", {}, el("tr", {}, el("th", { scope: "col" }, "Vaqt"), [1, 2, 3, 4, 5, 6, 7].map((d) => el("th.n", { scope: "col" }, WEEK[d % 7])))),
+  return el("div.scroll", { tabindex: 0 }, el("table.heat", {}, el("thead", {}, el("tr", {}, el("th", { scope: "col" }, "Vaqt"), [1, 2, 3, 4, 5, 6, 7].map((d) => el("th.n", { scope: "col" }, WEEK[d % 7])))),
     el("tbody", {}, times.map((tm) => el("tr", {}, el("td", {}, tm), [1, 2, 3, 4, 5, 6, 7].map((d) => { const n = at.get(`${d}|${tm}`) ?? 0; return el("td.n", { style: n ? `background:color-mix(in srgb, var(--bar) ${Math.round(8 + (n / max) * 32)}%, var(--card))` : null, title: `${WEEK[d % 7]}, ${tm}: ${n} mehmon` }, n ? String(n) : "·"); }))))));
 }
 
-export function analytics({ key, cfg }) {
+export function analytics({ cfg }) {
   let days = 30;
   return live(async (refresh) => {
-    const a = await api(`/api/host/analytics?days=${days}`, null, key), t = a.totals;
+    const a = await api(`/api/host/analytics?days=${days}`), t = a.totals;
     const diff = a.previous.earned ? `${t.earned >= a.previous.earned ? "+" : "−"}${Math.abs(Math.round((t.earned / a.previous.earned - 1) * 100))}% oldingi davrga nisbatan` : null;
     const download = () => {
       const head = ["bron_sanasi", "tashrif_sanasi", "vaqt", "taklif", "mehmonlar", "kanal", "holat", "jami_som", "platforma_som", "mehmonxona_som", "sizga_som"];
@@ -132,7 +132,7 @@ export function analytics({ key, cfg }) {
       link.remove();
       setTimeout(() => URL.revokeObjectURL(link.href), 1000);
     };
-    const share = (rows, name, label) => card(label, rows.length ? table([["", 0], ["Bron", 1], ["Daromad", 1]], rows.map((r) => [name(r.key), String(r.bookings), som(r.earned)])) : el("p.muted", {}, "Bu davrda ma’lumot yo‘q."));
+    const share = (rows, name, label) => card(label, rows.length ? table([["Nomi", 0], ["Bron", 1], ["Daromad", 1]], rows.map((r) => [name(r.key), String(r.bookings), som(r.earned)])) : el("p.muted", {}, "Bu davrda ma’lumot yo‘q."));
     return [
       el("div.row.between", {}, el("div.chips", { role: "group", "aria-label": "Davr" }, a.available.map((d) => el("button", { "aria-pressed": String(d === a.days), onclick: () => { if (!a.unlocked.includes(d)) { location.hash = "tarif"; return toast("Uzoqroq davr Pro tarifida ochiladi"); } days = d; refresh(); } }, d === 365 ? "1 yil" : `${d} kun`, !a.unlocked.includes(d) && el("span.small", {}, " Pro")))),
         a.detail && el("button", { onclick: download }, "CSV yuklash")),
@@ -150,11 +150,11 @@ export function analytics({ key, cfg }) {
 }
 
 // ---- market intelligence --------------------------------------------------------------------------
-export function market({ key, home, cfg }) {
+export function market({ home, cfg }) {
   if (!home.plan.intelligence) return lock("Bozor tahlili: narxlar taqqosi, javobsiz talab, hududlar trendi va tavsiyalar. Business tarifida ochiladi.");
   return live(async () => {
-    const m = await api("/api/host/intelligence", null, key);
-    const gap = (rows) => (rows.length ? table([["", 0], ["Javobsiz", 1], ["Jami", 1], ["Namuna", 1]], rows.map((r) => [r.name, String(r.unmet), String(r.searches), String(r.sample)])) : el("p.muted", {}, "Hali qidiruv yo‘q."));
+    const m = await api("/api/host/intelligence");
+    const gap = (rows) => (rows.length ? table([["Nomi", 0], ["Javobsiz", 1], ["Jami", 1], ["Namuna", 1]], rows.map((r) => [r.name, String(r.unmet), String(r.searches), String(r.sample)])) : el("p.muted", {}, "Hali qidiruv yo‘q."));
     const dates = m.dates.length ? table([["Sana", 0], ["Qidiruv", 1], ["Javobsiz", 1]], m.dates.map((x) => [`${day(x.date)}, ${weekday(x.date)}`, String(x.n), String(x.unmet)])) : el("p.muted", {}, "Turistlar hali aniq sana bilan qidirmagan.");
     return [
       m.sampleSearches > 0 && el("div.note.warn", {}, `Diqqat: ${m.sampleSearches} ta qidiruv namuna ma’lumot. “Namuna” ustuniga qarang.`),
@@ -178,21 +178,22 @@ const PERKS = {
 const KIND = { new: "Ulash", extend: "Uzaytirish", upgrade: "Tarifni oshirish" };
 const until = (iso) => day(new Date(+new Date(iso) + 5 * 3600e3).toISOString().slice(0, 10));
 
-export function plans({ key, cfg, reload }) {
+export function plans({ cfg, reload }) {
   return live(async (refresh) => {
-    const p = await api("/api/host/plans", null, key);
+    const p = await api("/api/host/plans");
     return [
       el("div.note", {}, `Joriy tarif: ${PLAN_NAME[p.current.plan]}${p.current.until ? `, ${until(p.current.until)} gacha` : ""}. Komissiya ${p.current.commission}%. Obuna o‘zi uzaymaydi: muddat tugasa, Bepul tarifga qaytasiz, takliflaringiz va bronlaringiz saqlanadi.`),
       el("div.grid.plans", {}, p.options.map((o) => el("section.card" + (o.id === p.current.plan ? ".chosen" : ""), {}, el("div.row.between", {}, el("h2", {}, PLAN_NAME[o.id]), o.id === p.current.plan && el("span.badge.ok", {}, "Joriy")),
         el("p.price.big", {}, o.price ? som(o.price) : "0 so‘m", o.price > 0 && el("small", {}, " / 30 kun")), el("p", {}, `Har bir brondan ${o.commission}% komissiya`), el("ul.perks", {}, PERKS[o.id].map((x) => el("li", {}, x))),
-        o.offer && cfg.testPayments && el("button" + (o.id === p.current.plan ? "" : ".primary"), { onclick: act(async () => {
-          const q = o.offer;
-          if (!(await ask(`${PLAN_NAME[o.id]}: sinov to‘lovi ${som(q.amount)}${q.credit ? ` (ishlatilmagan kunlar uchun ${som(q.credit)} chegirildi)` : ""}. ${until(q.until)} gacha. Haqiqiy pul yechilmaydi.`, "Davom etish", "Yo‘q"))) return;
-          await api(`/api/host/plans/${o.id}/subscribe-test`, {}, key);
+        o.offer && cfg.payMethods.map((method) => el("button" + (o.id === p.current.plan ? "" : ".primary"), { onclick: act(async () => {
+          const q = o.offer, test = method === "test";
+          if (!(await ask(`${PLAN_NAME[o.id]}: ${test ? "sinov to‘lovi " : ""}${som(q.amount)}${q.credit ? ` (ishlatilmagan kunlar uchun ${som(q.credit)} chegirildi)` : ""}. ${until(q.until)} gacha.${test ? " Haqiqiy pul yechilmaydi." : ""}`, "Davom etish", "Yo‘q"))) return;
+          const r = await api(`/api/host/plans/${o.id}/pay`, { method });
+          if (r.url) { location.href = r.url; return; }
           await reload();
           toast(`${PLAN_NAME[o.id]} tarifi yoqildi`);
           await refresh();
-        }) }, KIND[o.offer.kind])))),
+        }) }, method === "test" ? KIND[o.offer.kind] : `${KIND[o.offer.kind]}: ${PAY_NAME[method]}`))))),
       el("p.small.muted", {}, "Tarif o‘zgarsa, komissiya faqat yangi bronlarga ta’sir qiladi. Mehmonxona orqali kelgan brondan mehmonxona alohida ulush oladi."),
       p.invoices.length > 0 && card("To‘lovlar (sinov)", table([["Sana", 0], ["Tarif", 0], ["Chegirma", 1], ["To‘landi", 1], ["Amal qiladi", 0]], p.invoices.map((i) => [until(i.created_at), PLAN_NAME[i.plan], i.credit_uzs ? som(i.credit_uzs) : "—", som(i.amount_uzs), `${until(i.until)} gacha`]))),
     ];

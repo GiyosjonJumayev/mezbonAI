@@ -1,4 +1,4 @@
-# SilkRoad Experience OS 2.0
+# SilkRoad Experience OS 5.0
 
 **AI-powered Tourism Business Operating System**
 
@@ -20,21 +20,36 @@ Oddiy marketplace emas. Bu mahalliy turizm bizneslarini raqamlashtiradigan, ular
    - Daromad, konversiya, eng band vaqtlar, kelmaganlar, CSV.
    - Narx taqqosi, javobsiz talab, turistlar qidirgan sanalar va tillar.
 
-**Tariflar**: Bepul (12% komissiya, 3 taklif, kuniga 15 AI xabar), Pro (149 000 so‘m, 8%, 100), Business (490 000 so‘m, 6%, 300). Narxlar taxminiy: `src/business.mjs` dagi `PLANS` da o‘zgaradi.
+## 5.0 da yangi
+
+- **PostgreSQL**: pul va joyni himoya qiladigan qoidalar bazaning o‘zida ham tekshiriladi.
+- **Haqiqiy to‘lov**: Octo (Visa, Mastercard, Uzcard, Humo) va Payme, pul qaytarish, obuna, o‘tkazmalar hisobi.
+- **Sayohat rejasi**: faqat haqiqatan bo‘sh joylardan yo‘nalish tuzadi, hammasini birga band qiladi yoki hech birini.
+- **Passkey**: kabinetga barmoq izi, yuz yoki PIN bilan kiriladi, parol yo‘q.
+- **Ma’muriyat** (`/admin`): mezbonni tekshirish, shikoyatlar, qaytarishlar, o‘tkazmalar, o‘chirib bo‘lmaydigan jurnal.
+- **Ishonch**: mezbon sahifasi, javob vaqti, “Tekshirilgan” belgisi. Mezbon 24 soatda javob bermasa, pul o‘zi qaytadi.
+
+**Tariflar**: Bepul (12% komissiya, 3 taklif, kuniga 15 AI xabar), Pro (149 000 so‘m, 8%, 100), Business (490 000 so‘m, 6%, 300). Narxlar taxminiy: `src/domain/plans.mjs` da o‘zgaradi.
 
 ![Bosh sahifa](screenshots/home.png)
 
 ## Ishga tushirish
 
-Node.js 24 yoki yangiroq kerak.
+[Node.js 24+](https://nodejs.org) va [PostgreSQL](https://www.postgresql.org/download/) o‘rnatilgan bo‘lishi kerak (18 da sinalgan).
 
 ```powershell
 npm install
 ```
 
 ```powershell
+npm run db:local
+```
+
+```powershell
 npm start
 ```
+
+`npm run db:local` loyiha uchun alohida baza ochadi: o‘z papkasi, porti va tasodifiy parollari bor, boshqa bazalaringizga tegmaydi.
 
 | Sahifa | Kim uchun |
 |---|---|
@@ -42,42 +57,47 @@ npm start
 | http://localhost:4321/mezbon | Mahalliy biznes |
 | http://localhost:4321/panel | Turizm qo‘mitasi, hokimlik |
 | http://localhost:4321/qr | Mehmonxona |
+| http://localhost:4321/admin | Ma’muriyat (`.env` da `ADMIN_KEY` kerak) |
 
-Testlar: `npm test`. Bazani tozalash: serverni to‘xtating, keyin `npm run reset`.
+**Taqdimot uchun**: `npm run demo` bir oylik namuna faoliyat bilan alohida bazada, 4322-portda ochiladi va barcha havolalarni ko‘rsatadi.
 
-## Sozlash
+Testlar: `npm test`. Zaxira: `npm run backup -- --verify`.
 
-`.env.example` nusxasini `.env` deb nomlang. `.env` GitHub’ga yuklanmaydi.
+## To‘lovni ulash
 
-- **`ANTHROPIC_API_KEY`**: haqiqiy AI matn va tarjima. Bo‘lmasa **demo rejim**: faktlar qoidalar bilan ajratiladi, matn shablondan olinadi.
-- **`MEZBON_OFFLINE=1`**: zalda internet bo‘lmasa, demo rejimni majburlaydi.
-- **`HOST=0.0.0.0`**: telefonlar bir xil Wi-Fi orqali kiradi. HTTPS yo‘q, shuning uchun faqat demo vaqtida yoqing.
-- **`TELEGRAM_BOT_TOKEN`**: bot alohida oynada `npm run telegram` bilan ishlaydi.
+1. Octo yoki Payme bilan savdogar shartnomasi tuzing va kalitlarni oling.
+2. Sayt `https://` manzilda ishlashi kerak (`compose.yaml` sertifikatni o‘zi oladi).
+3. `.env` ga `OCTO_SHOP_ID` va `OCTO_SECRET` yoki `PAYME_MERCHANT_ID` va `PAYME_KEY` yozing. Payme kabinetida manzil: `https://domeningiz/pay/payme`, hisob maydoni: `order_id`.
+4. Sinov to‘lovi o‘zi o‘chadi.
+
+Karta ma’lumoti bu serverga kelmaydi. Server hech kimga pul yubormaydi: mezbonlarga o‘tkazma bankda qilinadi va `/admin` da yoziladi.
+
+Barcha sozlamalar: [.env.example](../.env.example). Xavfsizlik: [SECURITY.md](../SECURITY.md).
 
 ## 3 daqiqalik demo
 
-1. `/mezbon` ni Chrome’da oching, ism yozing, mikrofonni bosib gapiring. Mikrofon ishlamasa: **Namuna matn**.
-2. **Taklifni tayyorlash**, tillarni almashtirib ko‘rsating, **E’lon qilish**.
-3. Telefondan mehmonxona QR kodini skanerlang, xitoychani tanlab bron qiling, sinov to‘lovini bosing.
-4. Usta ekranida bron chiqadi va ovoz eshitiladi. Usta qabul qiladi, mehmonda QR chipta paydo bo‘ladi. **Chiptalar** bo‘limida kodni tekshiring (faqat tashrif kuni qabul qilinadi).
-5. **AI yordamchi**da “narxni 180 ming qil” deng va tasdiqlang. **Tarif** bo‘limida sinov obunasini yoqing, **Daromad** va **Bozor tahlili**ni ko‘rsating.
-6. `/?region=surxondaryo` ni oching (bo‘sh), keyin `/panel`: talab bor, taklif yo‘q.
-7. AI yordamchiga: “Farg‘onada kulolchilik darsini top va joy ushlab tur”.
+`npm run demo` ni ishga tushiring va chiqqan havolalardan foydalaning.
+
+1. Sayohatchi sahifasida **Sayohat rejasi**: “5 kun, 2 kishi, Samarqand va Buxoro, oshpazlik” deb yozing. Yo‘nalish chiqadi, hammasini band qiling.
+2. Bitta bronni oching, sinov to‘lovini bosing. Ustada bron chiqadi va ovoz eshitiladi. Usta qabul qiladi, mehmonda QR chipta paydo bo‘ladi.
+3. Boshqa bronni bekor qiling: pul qaytgani ko‘rinadi.
+4. Kabinetda mikrofonni bosib yangi taklif yarating (mikrofon ishlamasa: **Namuna matn**), 10 tilni ko‘rsating, **E’lon qilish**.
+5. **AI yordamchi**da “narxni 180 ming qil” deng va tasdiqlang. **Daromad** va **Bozor tahlili**ni ko‘rsating.
+6. `/admin` da mezbonni tekshiring, shikoyat va jurnalni ko‘rsating.
+7. `/panel`: talab bor, taklif yo‘q hududlar.
 
 Demo oldidan Claude kaliti bilan vaqtni o‘lchang. “60 soniya”ni faqat o‘lchagandan keyin ayting.
 
-## Prototipda nima haqiqiy emas
+## Tashqi dunyodan nima kerak
 
-- **To‘lov va obuna**: sinov tugmasi, pul yechilmaydi. Litsenziyali to‘lov hamkori kerak.
-- **GetYourGuide, Viator, Klook**: ulanmagan. Faqat `/feeds/products.json` eksporti bor.
-- **Namuna ma’lumot**: 4 ta mezbon, 3 ta mehmonxona, 96 ta qidiruv o‘ylab topilgan va belgilangan. `SEED=0` bilan o‘chiriladi.
-- **Claude kalitisiz** yordamchi faqat tayyor o‘zbekcha buyruqlarni tushunadi, erkin suhbat emas.
-- **Eslatmalar** yuborilmaydi: o‘zgarish sahifada ko‘rinadi, Telegram ulangan mezbonga xabar boradi.
-- **Nutqni tanish**: brauzerniki (Chrome, internet kerak). Ovoz brauzer ishlab chiqaruvchisiga yuboriladi.
-- **Ovozli o‘qish**: ko‘p qurilmalarda o‘zbek ovozi yo‘q, turkcha ovoz ishlatiladi.
-- **Telegram ovozli xabarlari**: matnga aylantirilmaydi.
-- **Tarjimalar**: til egalari tekshirmagan.
-- **Tunash**: mehmon uyida tunash broni yo‘q, faqat tajribalar (kechki ovqat, master-klass) sotiladi.
-- **Kamera skaneri**: haqiqiy telefonda sinalmagan, HTTPS kerak. Telefonning o‘z kamerasi yoki kodni qo‘lda kiritish ham ishlaydi.
-- **Kirish**: usta kabineti maxfiy havola bilan ochiladi. SMS tasdiq yo‘q.
-- **Gid sertifikati**: raqami so‘raladi, reyestrdan tekshirilmaydi.
+- **To‘lov shartnomasi**: Octo va Payme ularning hujjatlari bo‘yicha yozilgan va mahalliy sinov serverida tekshirilgan, haqiqiy xizmatda hali emas. Shartnoma, kalitlar va ularning qabul sinovi kerak. Click ulanmagan.
+- **Docker va Caddy** ishlab chiquvchi kompyuterida ishga tushirib ko‘rilmagan, GitHub CI konteynerni ishga tushiradi.
+- **Claude** haqiqiy API bilan hali sinalmagan. Kalitsiz yordamchi va sayohat rejasi faqat tayyor iboralarni tushunadi.
+- **Push va Telegram** sinov jo‘natuvchi bilan tekshirilgan. HTTPS va bot tokeni kerak.
+- **Rasmlar** avtomatik naqsh, haqiqiysini mezbon yuklaydi.
+- **Nutqni tanish** brauzerniki (Chrome, internet kerak). Ovoz brauzer ishlab chiqaruvchisiga yuboriladi.
+- **Tarjimalar**ni til egalari tekshirmagan.
+- **“Tekshirilgan” belgisi va gid sertifikati** ma’mur hujjatni haqiqatan ko‘rishiga bog‘liq, reyestr bilan aloqa yo‘q.
+- **Sayohatda har bir bron alohida to‘lanadi**, chunki har bir mezbonga alohida to‘lanadi va qaytariladi.
+- **Tunash** broni yo‘q. **GetYourGuide, Viator, Klook** ulanmagan, faqat `/feeds/products.json` bor.
+- **Qonun**: shartnoma, soliq, fiskal chek va shaxsiy ma’lumotni O‘zbekistonda saqlash bo‘yicha yurist maslahati kerak.

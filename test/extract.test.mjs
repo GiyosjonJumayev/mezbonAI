@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { extractFacts, readNumber, templateI18n } from "../src/extract.mjs";
+import { extractFacts, readNumber, templateI18n } from "../src/ai/extract.mjs";
 
 test("Uzbek numbers", () => {
   for (const [s, v] of [["yuz ellik ming", 150000], ["ikki yuz ming", 200000], ["150 ming", 150000], ["150 000", 150000], ["150.000", 150000], ["bir million ikki yuz ming", 1200000], ["o'n besh", 15], ["ming", 1000]])

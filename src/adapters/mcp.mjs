@@ -2,7 +2,7 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
-import { CATEGORIES, LANGS, REGIONS, REGION_NAMES, UI } from "./i18n.mjs";
+import { CATEGORIES, LANGS, REGIONS, REGION_NAMES, UI } from "../lib/i18n.mjs";
 
 const BASE = process.env.MEZBON_URL || "http://localhost:4321";
 
@@ -19,7 +19,7 @@ const safe = (fn) => async (a) => {
   catch (e) { return { isError: true, content: [{ type: "text", text: e.message }] }; }
 };
 
-const server = new McpServer({ name: "silkroad-experience-os", version: "2.0.0" });
+const server = new McpServer({ name: "silkroad-experience-os", version: "5.0.0" });
 
 server.registerTool("search_experiences", {
   description: "Search craft workshops, cooking classes and village visits hosted by local people in Uzbekistan. Returns the price per person in UZS, capacity and rating. Pass date and guests to keep only listings with free places. Listings with sample=true are demo data; say so to the traveller.",
@@ -37,6 +37,18 @@ server.registerTool("search_experiences", {
     listing_id: l.id, ...l.i18n[language], host: l.host, region: REGION_NAMES[l.region].en, price_uzs_per_person: l.price_uzs, duration_min: l.duration_min,
     capacity: l.capacity, rating: l.rating, reviews: l.reviews, sample: l.demo,
   }));
+}));
+
+server.registerTool("plan_trip", {
+  description: "Build a day-by-day route through Uzbekistan from experiences that really have free places, ordered so the traveller does not zigzag. Nothing is reserved. To reserve, call create_booking for each stop after the traveller agrees. Stops with sample=true are demo data; say so.",
+  inputSchema: {
+    from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).describe("First day, YYYY-MM-DD"), days: z.number().int().min(1).max(14), guests: z.number().int().min(1).max(30),
+    regions: z.array(z.enum(Object.keys(REGIONS))).optional(), interests: z.array(z.enum(Object.keys(CATEGORIES))).optional(), pace: z.enum(["calm", "full"]).optional(), budget_uzs_per_person: z.number().int().min(1000).optional(), language: z.enum(LANGS).default("en"),
+  },
+  annotations: { readOnlyHint: true },
+}, safe(async ({ language, budget_uzs_per_person: budget, ...a }) => {
+  const p = await call("/api/trips/plan", { ...a, budget });
+  return { total_uzs: p.total_uzs, days: p.days.map((d) => ({ date: d.date, region: REGION_NAMES[d.region].en, stops: d.items.map((x) => ({ listing_id: x.listing_id, time: x.time, title: x.i18n[language].title, host: x.host, duration_min: x.duration_min, price_uzs_per_person: x.price_uzs, sample: x.demo })) })) };
 }));
 
 server.registerTool("check_availability", {

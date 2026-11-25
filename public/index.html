@@ -1,19 +1,23 @@
 <!doctype html>
 <html lang="en">
 <head>
-<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>SilkRoad Experience OS</title>
 <meta name="description" content="Book craft workshops, home cooking and village visits directly with local hosts across Uzbekistan, in ten languages.">
-<meta name="theme-color" content="#0f2740">
+<meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)"><meta name="theme-color" content="#0a141f" media="(prefers-color-scheme: dark)">
 <meta property="og:title" content="SilkRoad Experience OS"><meta property="og:description" content="Every Local Experience. One Digital Platform.">
-<link rel="icon" href="/icon.svg"><link rel="stylesheet" href="/app.css"><link rel="preload" href="/fonts/onest-latin-wght-normal.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="icon" href="/icon.svg"><link rel="apple-touch-icon" href="/icon192.png"><link rel="manifest" href="/manifest.webmanifest">
+<script src="/theme.js"></script>
+<link rel="stylesheet" href="/app.css"><link rel="stylesheet" href="/components.css">
+<link rel="preload" href="/fonts/onest-latin-wght-normal.woff2" as="font" type="font/woff2" crossorigin>
 </head>
 <body>
 <a class="skip" href="#app" id="skip">Skip to content</a>
 <header class="top"><div class="wrap"><a class="brand" href="/"><img src="/icon.svg" alt="">SilkRoad <span>Experience OS</span></a><nav id="nav" aria-label="SilkRoad"></nav><select id="lang"></select></div></header>
 <main id="app" tabindex="-1"><div class="loading" role="status" aria-label="…"><img src="/icon.svg" alt=""></div></main>
-<footer><div class="wrap row between"><span id="foot"></span><a href="/panel">Talab paneli</a></div></footer>
-<noscript><p style="padding:20px">JavaScript is required. JavaScript kerak.</p></noscript>
+<footer><div class="wrap row between"><span id="foot"></span><span class="row" id="prefs"></span></div></footer>
+<nav class="bottom" id="bottom" aria-label="SilkRoad"></nav>
+<noscript><p class="wrap">JavaScript is required. JavaScript kerak.</p></noscript>
 <script type="module" src="/tourist.js"></script>
 </body>
 </html>
