@@ -2,6 +2,14 @@
 
 Saytni haqiqiy mehmonlar uchun ochish tartibi. Har bir qadamdan keyin `npm run doctor` nima tayyor, nima yo‘qligini aytadi.
 
+## 0. Avval namoyish va niyat xatlari
+
+Haqiqiy saytdan oldin ochiq namoyish qo‘yish mumkin: Render’da `render.yaml` (bepul, 30 kundan keyin bazasi o‘chadi). Unda faqat namuna ma’lumot va sinov to‘lovi bor. **Niyat xatlarini namoyishda emas, o‘z serveringizda yig‘ing**: namoyish bazasi o‘chib ketadi.
+
+1. Usta va mehmonxonalarga `/hamkor` havolasini bering yoki yonida o‘tirib birga to‘ldiring.
+2. `/admin` da “Niyat xatlari”: qo‘ng‘iroq qiling, keyin “Tasdiqlash”ni bosing.
+3. Xat shartnoma emas. Taqdimotda ism ko‘rsatish uchun alohida ruxsat oling.
+
 ## 1. Server va domen
 
 1. Docker o‘rnatilgan Linux server va domen oling. Domenni server IP manziliga yo‘naltiring.

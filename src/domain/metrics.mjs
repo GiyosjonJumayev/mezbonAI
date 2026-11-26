@@ -4,7 +4,7 @@ import { addDays, ago, DAY, today } from "../lib/util.mjs";
 
 const pct = (a, b) => (b > 0 ? a / b : null);
 
-export function createMetrics({ db, config }) {
+export function createMetrics({ db, config, partners }) {
   // A booking counts as sold when a payment for it arrived and that part was not sent back.
   const SOLD = `EXISTS (SELECT 1 FROM payment_items i JOIN payments p ON p.id=i.payment_id WHERE i.booking_id=b.id AND p.paid_at IS NOT NULL AND (?::boolean OR p.provider NOT IN ('test','credit'))
     AND NOT EXISTS (SELECT 1 FROM refunds r WHERE r.payment_id=p.id AND r.booking_id=b.id))`;
@@ -47,6 +47,7 @@ export function createMetrics({ db, config }) {
         hosts: { ...hosts, days_to_publish: hosts.to_publish == null ? null : Math.round((hosts.to_publish / 86400) * 10) / 10 },
         quality: { reply_hours: quality.reply == null ? null : Math.round((quality.reply / 3600) * 10) / 10, decline_rate: pct(quality.declined, quality.answered), no_show: pct(quality.no_show, quality.past), rating: quality.rating == null ? null : Math.round(quality.rating * 10) / 10 },
         repeat: { guests: repeat.guests, again: repeat.again, rate: pct(repeat.again, repeat.guests) },
+        letters: await partners.letterTotals(),
         months, channels: await group("b.channel"), languages: await group("b.lang"),
       };
     },

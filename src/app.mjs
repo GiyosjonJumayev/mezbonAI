@@ -51,6 +51,8 @@ export async function createApp({ db, config, pushSend, mailer, telegram = confi
     [1, "mail", mail.work],
     [6 * 60, "rates", rates.work],
     [60, "cleanup", admin.cleanup],
+    [60, "stage", domain.stage.cleanStage],
+    [24 * 60, "partners", domain.partners.cleanPartners],
     [24 * 60, "retention", admin.retention],
   ];
   const timers = [];

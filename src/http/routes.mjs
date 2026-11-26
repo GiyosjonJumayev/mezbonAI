@@ -8,6 +8,7 @@ import { CANCEL_HOURS } from "../domain/bookings.mjs";
 import { MAX_PHOTOS } from "../domain/catalog.mjs";
 import { asHost } from "../domain/accounts.mjs";
 import { cleanEmail } from "../domain/mail.mjs";
+import { COMMISSIONS, KINDS } from "../domain/partners.mjs";
 import { HOTEL_FEE, PLANS } from "../domain/plans.mjs";
 import { CATEGORIES, LANGS, LANG_NAMES, PHRASES, PROVIDER_TYPES, REGIONS, REGION_NAMES, UI } from "../lib/i18n.mjs";
 import { fail } from "../lib/util.mjs";
@@ -20,9 +21,9 @@ function sniffImage(b) {
   return null;
 }
 
-export function createRoutes({ core, payments, admin, metrics, config, db, push, mail, rates, photos }) {
+export function createRoutes({ core, payments, admin, metrics, partners, stage, config, db, push, mail, rates, photos }) {
   mkdirSync(photos, { recursive: true });
-  const limitAi = limiter(20, 60e3), limitSignup = limiter(10, 10 * 60e3), limitLogin = limiter(20, 10 * 60e3), limitTicket = limiter(60, 60e3), limitAdmin = limiter(5, 15 * 60e3), limitReport = limiter(5, 3600e3), limitPay = limiter(20, 60e3), limitMail = limiter(5, 10 * 60e3), limitAddress = limiter(3, 3600e3), limitBook = limiter(20, 10 * 60e3), limitTrip = limiter(5, 10 * 60e3);
+  const limitAi = limiter(20, 60e3), limitSignup = limiter(10, 10 * 60e3), limitLogin = limiter(20, 10 * 60e3), limitTicket = limiter(60, 60e3), limitAdmin = limiter(5, 15 * 60e3), limitReport = limiter(5, 3600e3), limitLetter = limiter(6, 3600e3), limitStage = limiter(10, 3600e3), limitPay = limiter(20, 60e3), limitMail = limiter(5, 10 * 60e3), limitAddress = limiter(3, 3600e3), limitBook = limiter(20, 10 * 60e3), limitTrip = limiter(5, 10 * 60e3);
   const newSearch = counter(1, 10 * 60e3); // one visitor repeating a search is one signal of demand
   const newView = counter(1, 30 * 60e3);
   const dropPhoto = (f) => (f ? unlink(path.join(photos, path.basename(f))).catch(() => {}) : null);
@@ -31,7 +32,7 @@ export function createRoutes({ core, payments, admin, metrics, config, db, push,
 
   const open = {
     "GET /healthz": async () => ({ ok: await db.ping() }),
-    "GET /api/config": () => ({ langs: LANGS, langNames: LANG_NAMES, regions: REGIONS, regionNames: REGION_NAMES, categories: CATEGORIES, ui: UI, phrases: PHRASES, providerTypes: PROVIDER_TYPES, plans: PLANS, hotelFee: HOTEL_FEE, cancelHours: CANCEL_HOURS, maxPhotos: MAX_PHOTOS, ai: aiEnabled(), payMethods: payments.methods(), testPayments: config.testPayments, fx: rates.get(), mail: mail.on }),
+    "GET /api/config": () => ({ langs: LANGS, langNames: LANG_NAMES, regions: REGIONS, regionNames: REGION_NAMES, categories: CATEGORIES, ui: UI, phrases: PHRASES, providerTypes: PROVIDER_TYPES, plans: PLANS, hotelFee: HOTEL_FEE, cancelHours: CANCEL_HOURS, maxPhotos: MAX_PHOTOS, ai: aiEnabled(), payMethods: payments.methods(), testPayments: config.testPayments, fx: rates.get(), mail: mail.on, demoSite: config.demoSite, stage: config.stage, commissions: COMMISSIONS, partnerKinds: KINDS }),
     "GET /api/listings": async ({ q, ip }) => {
       const f = { region: q.get("region"), category: q.get("category"), date: q.get("date"), guests: Number(q.get("guests")), lang: q.get("lang"), source: q.get("source") === "ai" ? "ai" : "web" };
       return core.search({ ...f, log: newSearch([ip, f.source, f.region, f.category].join("|")) });
@@ -56,6 +57,17 @@ export function createRoutes({ core, payments, admin, metrics, config, db, push,
       return config.testPayments ? { ...p, platform } : p; // platform income is for the demo, never public in production
     },
     "GET /api/impact": () => metrics.impact(),
+    "POST /api/partners/preview": ({ body }) => partners.previewLetter(body),
+    "POST /api/partners": ({ body, ip }) => { limitLetter(ip); return partners.signLetter(body); },
+    "GET /api/partners/:id": ({ id }) => partners.letter(id),
+    "POST /api/partners/:id/withdraw": ({ id }) => partners.withdrawLetter(id),
+    "POST /api/stage/start": async ({ ip, label, session }) => {
+      if (!config.stage) throw fail(404, "Topilmadi", "notfound");
+      limitStage(ip);
+      const s = await stage.startStage(label);
+      session.set(s.token, s.maxAge);
+      return { listing: s.listing, day: s.day, host: s.host.name };
+    },
     "GET /feeds/products.json": () => core.feed(),
     "POST /api/find": ({ body, ip }) => { limitMail(ip); if (typeof body.email === "string") limitAddress(`find|${body.email.trim().toLowerCase()}`); return mail.findBookings(body.email, body.lang); },
     "GET /api/push/key": () => ({ key: push.publicKey }),
@@ -158,6 +170,8 @@ export function createRoutes({ core, payments, admin, metrics, config, db, push,
   // Everything below needs an administrator session; `admin: true` is checked before the handler runs.
   const adminOnly = {
     "GET /api/admin": () => admin.overview(),
+    "GET /api/admin/partners": async () => ({ totals: await partners.letterTotals(), list: await partners.partners() }),
+    "POST /api/admin/partners/:id": ({ id, body }) => partners.setPartner(id, body),
     "GET /api/admin/metrics": ({ q }) => metrics.investor({ days: Number(q.get("days")) || 90, sample: q.get("sample") === "1" }),
     "GET /api/admin/hosts": ({ q }) => admin.hosts(q.get("q") ?? ""),
     "POST /api/admin/hosts/:id/verify": ({ id, body }) => admin.verifyHost(id, body.on),

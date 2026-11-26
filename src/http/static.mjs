@@ -8,7 +8,7 @@ import { ROOT } from "../config.mjs";
 import { fail } from "../lib/util.mjs";
 
 const PUBLIC = path.join(ROOT, "public");
-const PAGES = { "/": "index.html", "/mezbon": "host.html", "/panel": "panel.html", "/qr": "qr.html", "/admin": "admin.html", "/impact": "impact.html" };
+const PAGES = { "/": "index.html", "/mezbon": "host.html", "/panel": "panel.html", "/qr": "qr.html", "/admin": "admin.html", "/impact": "impact.html", "/hamkor": "partner.html", "/stage": "stage.html" };
 const TYPES = { ".html": "text/html; charset=utf-8", ".js": "text/javascript; charset=utf-8", ".css": "text/css; charset=utf-8", ".svg": "image/svg+xml", ".jpg": "image/jpeg", ".png": "image/png", ".webp": "image/webp", ".woff2": "font/woff2", ".webmanifest": "application/manifest+json" };
 const TEXT = new Set([".html", ".js", ".css", ".svg", ".webmanifest"]);
 const zip = { br: promisify(brotliCompress), gzip: promisify(gzip) };

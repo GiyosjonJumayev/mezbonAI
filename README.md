@@ -1,4 +1,4 @@
-# SilkRoad Experience OS 6.0
+# SilkRoad Experience OS 7.0
 
 **AI-powered Tourism Business Operating System.** Every Local Experience. One Digital Platform. [O‘zbekcha](docs/README.uz.md)
 
@@ -12,7 +12,17 @@ A system that brings local tourism businesses in Uzbekistan online, helps them s
 
 Screenshots show made-up data. See [what still needs the outside world](#what-still-needs-the-outside-world).
 
-## What is new in 6.0
+## What is new in 7.0
+
+| | |
+|---|---|
+| **Letters of intent** | Makers, hotels and partners read and sign a letter at `/hamkor`, with a price and the commission they would accept. An administrator calls and confirms it. Only confirmed letters are counted. |
+| **Live stage** | `/stage` puts the traveller, the provider and the public result on one screen for a pitch. They are really connected. Uzbek or English, works with a presentation clicker, demonstrations only. |
+| **Public demonstration** | `render.yaml` puts a clearly marked demo with sample data on a public address. It refuses real payment keys. |
+
+![The live stage](docs/screenshots/stage.png)
+
+## Since 6.0
 
 | | |
 |---|---|
@@ -59,7 +69,7 @@ Open <http://localhost:4321> (travellers), `/mezbon` (providers), `/panel` (dema
 
 | Command | Purpose |
 |---|---|
-| `npm run demo` | A complete pitch demo with a month of sample activity, in its own database, on port 4322 |
+| `npm run demo` | A complete pitch demo with a month of sample activity, in its own database, on port 4322. Open `/stage` to present |
 | `npm test` | All tests, on a real PostgreSQL |
 | `npm run dev` | Start and restart on changes |
 | `npm run check` | Syntax check |
@@ -79,6 +89,10 @@ npm run doctor            # says what is ready and what is not
 ```
 
 The server refuses to start in production without HTTPS and an admin key. Step by step, in Uzbek: [docs/LAUNCH.md](docs/LAUNCH.md). Run `npm run backup` daily from a scheduler, and store the copies somewhere else.
+
+### A public demonstration
+
+[Deploy to Render](https://render.com/deploy?repo=https://github.com/GiyosjonJumayev/mezbonAI) reads `render.yaml` from the main branch. It is meant for showing, not for guests: every page says it is a demonstration, search engines are told not to index it, only test payments work, and Render deletes free databases after 30 days. Not yet tried on Render itself.
 
 ## Payments
 
@@ -117,7 +131,7 @@ src/main.mjs          starts everything; refuses unsafe settings
 src/config.mjs        the only place that reads the environment
 src/app.mjs           joins domain, notifications and HTTP
 src/db/               PostgreSQL access, transactions, numbered migrations
-src/domain/           the rules: accounts, catalog, availability, bookings, trips, plans, insights, metrics, assistant, admin, push, mail, rates
+src/domain/           the rules: accounts, catalog, availability, bookings, trips, plans, insights, metrics, partners, stage, assistant, admin, push, mail, rates
 src/payments/         bills, refunds and payouts; Octo client; Click SHOP API; Payme Merchant API
 src/ai/               Claude, and the rule-based Uzbek engine used without it
 src/http/             security checks, routes, static files
@@ -144,9 +158,9 @@ With the server running, add this to your MCP client. It can search, plan a trip
 
 ## What has been checked
 
-- 151 automated tests on PostgreSQL 18: rules, payments, simultaneous use, security, HTTP, MCP and Telegram.
-- 87 page views in real Microsoft Edge (light, dark, and a 320-pixel phone): no axe-core accessibility problems, no sideways scrolling and no console errors.
-- Sign-up, passkey sign-in and sign-out, trip planning and reservation, test payment, receipt, meeting point, refund and administration were driven in Edge.
+- 158 automated tests on PostgreSQL 18: rules, payments, simultaneous use, security, HTTP, MCP and Telegram.
+- Page views in real Microsoft Edge (light, dark, and a 320-pixel phone): 87 in version 6, and the new or changed pages in version 7: no axe-core accessibility problems, no sideways scrolling and no console errors.
+- Sign-up, passkey sign-in and sign-out, trip planning and reservation, test payment, receipt, meeting point, refund, administration, signing a letter and the whole live stage were driven in Edge.
 - The Central Bank rate feed was read live.
 
 ## What still needs the outside world
@@ -154,6 +168,7 @@ With the server running, add this to your MCP client. It can search, plan a trip
 - **Payment contracts.** Octo, Click and Payme follow their published documentation and were tested against local stand-ins, not their live services. You need a merchant contract, keys and their own acceptance test.
 - **The container setup** (Docker, Caddy) could not be run on the development computer. CI starts the container.
 - **The Claude path** is tested against a stand-in server, not yet against the live API. Without a key, the assistant and the trip wish understand a fixed set of phrases.
+- **A letter of intent** is not a contract. The signature is a typed name with a saved copy of the text, not a qualified electronic signature.
 - **Push, Telegram and e-mail** are tested with stand-ins. They need HTTPS, a bot token and a mail server.
 - **Listing artwork** is generated. Real photos must come from providers.
 - **Speech recognition** is the browser's own. It needs Chrome and internet, and sends audio to the browser vendor.

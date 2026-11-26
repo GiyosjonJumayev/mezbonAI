@@ -230,7 +230,7 @@ test("old personal data is removed; amounts stay", async () => {
 test("headers, sign-in limits and addresses", async () => {
   const s = await serve(), r = await fetch(s.base + "/panel");
   assert.equal(r.status, 200);
-  for (const [k, re] of [["content-security-policy", /frame-ancestors 'none'/], ["x-content-type-options", /nosniff/], ["cross-origin-opener-policy", /same-origin/], ["cross-origin-resource-policy", /same-origin/], ["referrer-policy", /no-referrer/]]) assert.match(r.headers.get(k), re);
+  for (const [k, re] of [["content-security-policy", /frame-ancestors 'self'/ /* a demonstration frames its own stage; the live site refuses (pitch.test) */], ["x-content-type-options", /nosniff/], ["cross-origin-opener-policy", /same-origin/], ["cross-origin-resource-policy", /same-origin/], ["referrer-policy", /no-referrer/]]) assert.match(r.headers.get(k), re);
   assert.ok(!/unsafe/.test(r.headers.get("content-security-policy")), "no inline scripts or styles");
   assert.equal((await fetch(s.base + "/", { headers: { "If-None-Match": (await fetch(s.base + "/")).headers.get("etag") } })).status, 304);
   const codes = [];

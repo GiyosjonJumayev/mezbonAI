@@ -48,7 +48,7 @@ export function createAdmin({ db, accounts, payments, audit, events, config }) {
       const rows = await db.all(`SELECT h.id, h.name, h.type, h.plan, h.demo, h.verified_at, h.suspended_at, h.created_at,
         (SELECT COUNT(*) FROM listings WHERE host_id=h.id AND status='published') listings,
         (SELECT string_agg(DISTINCT cert_no, ', ') FROM listings WHERE host_id=h.id) certificates
-        FROM hosts h WHERE h.name ILIKE ? OR h.id ILIKE ? ORDER BY (h.verified_at IS NULL) DESC, h.created_at DESC LIMIT 50`, like, like);
+        FROM hosts h WHERE NOT h.stage AND (h.name ILIKE ? OR h.id ILIKE ?) ORDER BY (h.verified_at IS NULL) DESC, h.created_at DESC LIMIT 50`, like, like);
       return Promise.all(rows.map(async (h) => ({ ...h, balance: await payments.balance(h.id) })));
     },
     async verifyHost(hid, on) {

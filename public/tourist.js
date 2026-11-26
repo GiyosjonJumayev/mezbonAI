@@ -1,7 +1,7 @@
 import { PAY_NAME, act, api, ask, copy, el, GEO, plate, store, toast, uzs, visual } from "/common.js";
 import { art, icon } from "/art.js";
 import { planner, tripPage } from "/trip.js";
-import { enablePush, installButton, pushSupported, themePicker } from "/pwa.js";
+import { demoBanner, enablePush, installButton, pushSupported, themePicker } from "/pwa.js";
 
 const app = document.getElementById("app");
 const query = () => new URLSearchParams(location.search);
@@ -11,6 +11,7 @@ try { cfg = await api("/api/config"); } catch (e) {
   throw e;
 }
 let lang = [query().get("lang"), store.get("lang"), ...(navigator.languages ?? []).map((l) => l.slice(0, 2))].find((l) => cfg.langs.includes(l)) ?? "en";
+demoBanner(cfg, cfg.ui.testNote[lang]);
 let poll, renderId = 0, watch;
 const t = (k) => cfg.ui[k][lang];
 // Prices also in the visitor's own money; the first visit guesses it from the language.

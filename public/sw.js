@@ -1,5 +1,5 @@
 // Offline support and push notifications. Everything is network first, so an update is never hidden by the cache.
-const CACHE = "silkroad-5";
+const CACHE = "silkroad-7";
 const SHELL = ["/", "/theme.js", "/app.css", "/components.css", "/common.js", "/art.js", "/pwa.js", "/tourist.js", "/trip.js", "/icon.svg", "/fonts/onest-latin-wght-normal.woff2"];
 
 self.addEventListener("install", (e) => { e.waitUntil(caches.open(CACHE).then((c) => c.addAll(SHELL)).then(() => self.skipWaiting())); });
@@ -23,7 +23,7 @@ self.addEventListener("fetch", (e) => {
   const u = new URL(e.request.url);
   if (e.request.method !== "GET" || u.origin !== location.origin) return;
   if (u.pathname.startsWith("/api/") && !keep(u)) return;
-  if (u.pathname.startsWith("/feeds/") || u.pathname.startsWith("/calendar/") || u.pathname === "/admin" || u.pathname === "/healthz") return;
+  if (u.pathname.startsWith("/feeds/") || u.pathname.startsWith("/calendar/") || u.pathname === "/admin" || u.pathname === "/stage" || u.pathname === "/hamkor" || u.pathname === "/healthz") return;
   const page = e.request.mode === "navigate";
   const key = page ? u.pathname : e.request;
   e.respondWith(fetch(e.request).then((r) => {

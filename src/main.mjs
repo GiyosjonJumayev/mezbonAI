@@ -4,6 +4,7 @@ import { aiEnabled } from "./ai/claude.mjs";
 import { createApp } from "./app.mjs";
 import { loadConfig } from "./config.mjs";
 import { createDatabase } from "./db/database.mjs";
+import { fillDemo } from "./demo.mjs";
 import { seed } from "./seed.mjs";
 
 const config = loadConfig();
@@ -24,7 +25,8 @@ try {
 }
 
 const app = await createApp({ db, config });
-if (config.seed) await seed(db, app.core);
+if (config.demoSite) await fillDemo(app);
+else if (config.seed) await seed(db, app.core);
 const stop = new AbortController();
 app.server.on("error", (e) => {
   console.error(e.code === "EADDRINUSE" ? `${config.port}-port band. Boshqa oynadagi serverni yoping yoki PORT ni o‘zgartiring.` : e.message);
