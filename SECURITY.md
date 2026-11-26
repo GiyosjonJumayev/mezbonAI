@@ -17,6 +17,9 @@ Please report a vulnerability privately through GitHub: **Security → Report a 
 | Reading one host's income | Public impact figures need at least three earning hosts. |
 | Contacts in letters of intent | Seen only by an administrator. Withdrawing a letter erases the phone and e-mail at once; the letter with its name is deleted 90 days later. The exact signed text is kept with its SHA-256 hash. |
 | Our pages inside another site | Framing is refused. A demonstration may frame only itself, for the live stage. |
+| Live streams | They carry only "something changed", never names, amounts or booking links. An unlisted offer is announced only to those who have it open. Streams are limited per address and in total. |
+| A price changed between seeing and paying | The booking states the total the guest saw; a higher one is refused. The server alone computes the price. |
+| Waiting list addresses | One message each, at most ten waits per address, limited signing up, deleted after the day. The provider sees only numbers. Opening the link in the message changes nothing by itself. |
 | Guessing who has an account | Sign-in and "find my booking" by e-mail give the same answer for every address. |
 | Double sale, double payment, double refund | Row locks, unique constraints and idempotent steps, tested with simultaneous requests. |
 | Insider or leaked server account | The server's database account cannot change tables or rewrite the audit log. A trigger stops even the owner from editing it. |

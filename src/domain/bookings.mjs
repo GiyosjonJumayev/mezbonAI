@@ -6,6 +6,7 @@ import { bad, fail, id, int, lang, notFound, secret, startsAt, str, tashkentNow,
 import { cleanEmail, cleanPhone } from "./mail.mjs";
 import { hostListing } from "./catalog.mjs";
 import { effectivePlan, split } from "./plans.mjs";
+import { unitPrice } from "./pricing.mjs";
 
 export const HOLD_MIN = 30;
 export const CANCEL_HOURS = 24;
@@ -40,8 +41,10 @@ export function createBookings({ db, events, accounts, catalog, availability, pl
   const isExpired = (b) => b.status === "pending" && b.expires_at <= new Date().toISOString();
   const canCancel = (b) => (b.status === "pending" ? !isExpired(b) : ["paid", "confirmed"].includes(b.status) && !b.checked_in_at && startsAt(b.date, b.time) - Date.now() >= CANCEL_HOURS * 3600e3);
   const canReview = (b) => b.status === "confirmed" && (b.checked_in_at || startsAt(b.date, b.time) <= new Date()) && b.review_rating == null;
-  const toHost = (b, type) => events.emit("host", { hostId: b.host_id, type, id: b.id });
+  const toHost = (b, type) => events.emit("host", { hostId: b.host_id, type, id: b.id, listing: b.listing_id });
   const toGuest = (b, type, text) => events.emit("guest", { booking: b, type, text });
+  /** For open pages: places, totals or this booking may look different now. */
+  const changed = (b) => events.emit("booking", { id: b.id, listing: b.listing_id });
   const listingOf = (lid) => db.one("SELECT l.*, h.plan host_plan, h.plan_until host_plan_until FROM listings l JOIN hosts h ON h.id=l.host_id WHERE l.id=?", lid);
 
   const api = {
@@ -78,11 +81,15 @@ export function createBookings({ db, events, accounts, catalog, availability, pl
         const rule = (await db.one("SELECT capacity FROM slot_rules WHERE listing_id=? AND date=? AND time=?", l.id, date, time))?.capacity ?? 0;
         int(guests, "Mehmonlar soni", 1, Math.max(fresh.capacity, rule));
         if ((await availability.free(fresh, date, time)) < guests) throw fail(409, "Bu vaqtda joy yetarli emas", "full");
-        const s = split(fresh.price_uzs * guests, channel, effectivePlan({ plan: fresh.host_plan, plan_until: fresh.host_plan_until }));
+        // The price can change while the guest fills in the form. A lower one is simply charged; a higher one needs a new yes.
+        const total = unitPrice(fresh, date, time, guests).unit * guests;
+        if (Number.isInteger(p.expect_uzs) && total > p.expect_uzs) throw fail(409, "Narx o‘zgardi. Yangi narxni ko‘ring", "price");
+        const s = split(total, channel, effectivePlan({ plan: fresh.host_plan, plan_until: fresh.host_plan_until }));
         await db.run(`INSERT INTO bookings (id,token,listing_id,date,time,guests,guest_name,lang,channel,hotel_code,status,total_uzs,platform_uzs,hotel_uzs,host_uzs,expires_at,trip_id,guest_email,guest_phone)
           VALUES (?,?,?,?,?,?,?,?,?,?,'pending',?,?,?,?,?,?,?,?)`,
           b.id, b.token, l.id, date, time, guests, name, lang(p.lang), channel, channel === "hotel" ? hotel.code : null,
           s.total, s.platform, s.hotel, s.host, new Date(Date.now() + HOLD_MIN * 60e3).toISOString(), p.trip_id ?? null, email, phone);
+        changed({ id: b.id, listing_id: l.id });
       });
       return api.guestBooking(b.token);
     },
@@ -111,6 +118,7 @@ export function createBookings({ db, events, accounts, catalog, availability, pl
         if (!canCancel(b)) throw fail(409, "Bekor qilish muddati o‘tgan", "cancel");
         const r = await db.run("UPDATE bookings SET status='cancelled' WHERE id=? AND status=? AND checked_in_at IS NULL", b.id, b.status);
         if (!r.changes) throw fail(409, "Bron holati o‘zgargan", "state");
+        changed(b);
         if (b.status === "pending") return;
         toGuest(b, "cancelled");
         await refunds.refundBooking(b.id, "Mehmon bekor qildi");
@@ -145,6 +153,7 @@ export function createBookings({ db, events, accounts, catalog, availability, pl
       const rating = int(p.rating, "Baho", 1, 5), text = p.text ? str(p.text, "Izoh", 600) : null;
       const r = await db.run("INSERT INTO reviews (booking_id,listing_id,rating,text,lang) VALUES (?,?,?,?,?) ON CONFLICT DO NOTHING", b.id, b.listing_id, rating, text, b.lang);
       if (!r.changes) throw twice();
+      events.emit("listing", { listing: b.listing_id });
       return api.guestBooking(token);
     },
 
@@ -226,6 +235,7 @@ export function createBookings({ db, events, accounts, catalog, availability, pl
       if (t.state !== "valid") throw fail(409, why[t.state], "ticket");
       const r = await db.run("UPDATE bookings SET checked_in_at=now() WHERE ticket_code=? AND status='confirmed' AND checked_in_at IS NULL", t.code);
       if (!r.changes) throw fail(409, why.used, "ticket"); // another phone scanned it a moment earlier
+      changed(await db.one("SELECT id, listing_id FROM bookings WHERE ticket_code=?", t.code));
       return api.ticket(credential, raw);
     },
 

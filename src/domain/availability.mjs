@@ -16,7 +16,7 @@ function build(l, from, days, clock, room) {
   return out;
 }
 
-export function createAvailability({ db, catalog }) {
+export function createAvailability({ db, catalog, events }) {
   const index = (rows, v) => new Map(rows.map((r) => [`${r.date}T${r.time}`, r[v]]));
   const load = async (lid, from, to, except = null) => {
     const used = index(await db.all(`SELECT date, time, SUM(guests) n FROM bookings WHERE listing_id=? AND date>=? AND date<? AND ${LIVE} AND (?::text IS NULL OR id<>?) GROUP BY date, time`, lid, from, to, except, except), "n");
@@ -76,6 +76,7 @@ export function createAvailability({ db, catalog }) {
         int(capacity, "Joylar soni", 0, 100);
         await db.run("INSERT INTO slot_rules (listing_id,date,time,capacity) VALUES (?,?,?,?) ON CONFLICT (listing_id,date,time) DO UPDATE SET capacity=excluded.capacity", l.id, date, time, capacity);
       }
+      events.emit("slots", { listing: l.id });
       return (await this.slotCalendar(credential, lid, date, 1)).days[0];
     },
   };

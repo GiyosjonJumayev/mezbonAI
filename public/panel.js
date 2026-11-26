@@ -1,4 +1,4 @@
-import { api, el, GEO, som, toast } from "/common.js";
+import { api, counter, el, GEO, som, subscribe, toast } from "/common.js";
 import { themePicker } from "/pwa.js";
 
 document.getElementById("prefs").append(themePicker({ theme: "Mavzu", auto: "Avtomatik", light: "Yorug‘", dark: "Qorong‘i" }));
@@ -8,7 +8,8 @@ const CHANNEL = { web: "Sayt", hotel: "Mehmonxona QR", ai: "AI yordamchi" };
 const RANGE = [[0, "Hammasi"], [30, "30 kun"], [7, "7 kun"]];
 let days = 0, demo = true, last = "", data = null;
 
-const tile = (label, value) => el("div.card.tile", {}, el("b", {}, value), el("span.muted", {}, label));
+const tile = (label, value, show) => el("div.card.tile", {}, counter(label, value, show), el("span.muted", {}, label));
+const liveBadge = el("span.live", { hidden: true }, el("i"), "Jonli");
 const bars = (rows, name, cols) => {
   const max = Math.max(1, ...rows.map((r) => r.unmet));
   return el("div.scroll", { tabindex: 0 }, el("table", {}, el("thead", {}, el("tr", {}, el("th", { scope: "col" }, name), el("th", { scope: "col" }, "Javobsiz qidiruv"), cols.map(([h]) => el("th.n", { scope: "col" }, h)))),
@@ -44,12 +45,12 @@ async function load() {
   const focus = document.activeElement?.dataset?.f;
   const top = p.regions.find((r) => r.unmet > 0 && r.listings === 0);
   app.replaceChildren(el("div.wrap", {},
-    el("div.stack", {}, el("h1", {}, "Turist qidirdi, lekin topmadi"), el("p.muted", { style: "max-width:60ch" }, "Qaysi viloyatda talab bor-u, taklif yo‘q: yangi mezbonlarni qayerda tayyorlash kerakligini ko‘rsatadi.")),
+    el("div.stack", {}, el("div.row", {}, el("h1", {}, "Turist qidirdi, lekin topmadi"), liveBadge), el("p.muted", { style: "max-width:60ch" }, "Qaysi viloyatda talab bor-u, taklif yo‘q: yangi mezbonlarni qayerda tayyorlash kerakligini ko‘rsatadi.")),
     el("div.row.between", {}, el("div.chips", { role: "group", "aria-label": "Davr" }, RANGE.map(([d, t]) => el("button", { dataset: { f: "d" + d }, "aria-pressed": String(days === d), onclick: () => { days = d; safe(); } }, t))),
       el("div.row", {}, el("div.chips", {}, el("button", { dataset: { f: "demo" }, "aria-pressed": String(demo), onclick: () => { demo = !demo; safe(); } }, "Namuna qidiruvlar")), el("button", { dataset: { f: "csv" }, onclick: csv }, "CSV yuklash"))),
     p.demoSearches > 0 && el("div.note.warn", {}, `Diqqat: ${p.demoSearches} ta qidiruv namuna ma’lumot. Faqat haqiqiylarini ko‘rish uchun “Namuna qidiruvlar”ni o‘chiring.`),
     top && el("div.note", {}, `Eng katta bo‘shliq: ${top.name}. ${top.unmet} ta qidiruv javobsiz, hali birorta ham taklif yo‘q.`),
-    el("div.tiles", {}, tile("Mezbonlar ulushi (sinov to‘lovi)", som(p.totals.host)), tile("To‘langan bronlar", String(p.totals.bookings)), tile("Mehmonlar", String(p.totals.guests)), tile("Sotuvdagi takliflar", String(p.listings))),
+    el("div.tiles", {}, tile("Mezbonlar ulushi (sinov to‘lovi)", p.totals.host, som), tile("To‘langan bronlar", p.totals.bookings), tile("Mehmonlar", p.totals.guests), tile("Sotuvdagi takliflar", p.listings)),
     p.platform && el("section.card", {}, el("h2", {}, "Biznes model (sinov to‘lovlari)"), el("dl.facts", {}, [["Bron komissiyasi", som(p.totals.platform)], ["Faol obunalar", String(p.platform.subscribers)], ["Oylik obuna daromadi", som(p.platform.mrr)], ["Jami obuna to‘lovlari", som(p.platform.subscriptions)]].map(([k, v]) => el("div", {}, el("dt", {}, k), el("dd", {}, v)))), el("p.small.muted", {}, "Faqat sinov rejimida ko‘rinadi.")),
     el("section.card", {}, el("h2", {}, "Javobsiz qidiruvlar xaritasi"), el("p.small.muted", {}, "Sxematik xarita. Raqam: javobsiz qidiruvlar soni. To‘qroq rang: ko‘proq."), tileMap(p.regions)),
     el("section.card", {}, el("h2", {}, "Viloyatlar"), bars(p.regions, "Viloyat", [["Jami qidiruv", "searches"], ["Taklif", "listings"]])),
@@ -67,4 +68,5 @@ async function load() {
 }
 const safe = () => load().catch((e) => { if (!data) app.replaceChildren(el("div.wrap", {}, el("div.note.bad", { role: "alert" }, e.message))); });
 safe();
-setInterval(() => { if (!document.hidden) safe(); }, 4000);
+subscribe("/api/live", (ev) => { if (ev.t === "hello") liveBadge.hidden = false; else if (ev.t !== "slots") safe(); });
+setInterval(() => { if (!document.hidden) safe(); }, 20000); // in case the stream is blocked

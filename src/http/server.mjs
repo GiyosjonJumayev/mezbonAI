@@ -11,7 +11,7 @@ import { createStatic } from "./static.mjs";
 const device = (ua = "") => [/Edg/.test(ua) ? "Edge" : /Firefox/.test(ua) ? "Firefox" : /Chrome/.test(ua) ? "Chrome" : /Safari/.test(ua) ? "Safari" : "Brauzer", /Android/.test(ua) ? "Android" : /iPhone|iPad/.test(ua) ? "iOS" : /Windows/.test(ua) ? "Windows" : /Mac/.test(ua) ? "Mac" : ""].filter(Boolean).join(", ");
 
 export function createHttp(app) {
-  const { core, payments, config } = app;
+  const { core, payments, config, live } = app;
   const photos = path.join(config.dataDir, "photos");
   const routes = createRoutes({ ...app, photos }), serve = createStatic({ photos }), admins = adminSessions(config.adminKey, config.adminTotp);
   const streams = new Map(); // host id → Set of open event streams
@@ -62,6 +62,11 @@ export function createHttp(app) {
           if (!set.size) streams.delete(h.id);
         });
         return;
+      }
+      const stream = req.method === "GET" && /^\/api\/(?:live|listings\/([\w-]{1,64})\/live|bookings\/([\w-]{1,64})\/live)$/.exec(pathname);
+      if (stream) {
+        limitRead(ip);
+        return live.open(res, stream[1] ? `l:${(await core.published(stream[1])).id}` : stream[2] ? `b:${await core.bookingId(stream[2])}` : "all", ip);
       }
       if (pathname === "/api/qr.svg" && req.method === "GET") {
         limitRead(ip);

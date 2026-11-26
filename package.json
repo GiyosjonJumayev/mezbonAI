@@ -1,6 +1,6 @@
 {
   "name": "silkroad-experience-os",
-  "version": "7.0.0",
+  "version": "8.0.0",
   "description": "Tourism business platform for Uzbekistan: experience booking with real payments, AI business assistant, demand intelligence. PostgreSQL.",
   "private": true,
   "license": "UNLICENSED",

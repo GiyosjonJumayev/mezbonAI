@@ -51,6 +51,11 @@ export function createMail({ db, config, transport = config.mail && nodemailer.c
       if (["paid", "refunded"].includes(type)) lines.push(`${t("total")}: ${uzs(b.total_uzs, lang)}`);
       return queue(b.guest_email, `${b.i18n[lang].title}: ${says}`, { title: b.i18n[lang].title, lines, button: { text: t("open"), url: `${config.publicUrl}/?b=${b.token}&lang=${lang}` } }, lang);
     },
+    /** A place opened for someone on the waiting list. */
+    async placeOpen(w) {
+      const lang = LANGS.includes(w.lang) ? w.lang : "en", t = (k) => UI[k][lang];
+      return queue(w.email, `${w.i18n[lang].title}: ${t("waitMail")}`, { title: t("waitMail"), lines: [w.i18n[lang].title, `${t("date")}: ${longDate(w.date, lang)}, ${w.time}`, `${t("guests")}: ${w.guests}`, t("waitHurry"), `${t("waitStop")}: ${config.publicUrl}/?leave=${w.token}&lang=${lang}`], button: { text: t("book"), url: `${config.publicUrl}/?l=${w.listing_id}&date=${w.date}&lang=${lang}` } }, lang);
+    },
     /** All recent bookings of one address. The answer to the visitor never says whether there were any. */
     async findBookings(address, lang) {
       const to = cleanEmail(address), g = LANGS.includes(lang) ? lang : "en";

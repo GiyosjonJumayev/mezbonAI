@@ -1,4 +1,4 @@
-# SilkRoad Experience OS 7.0
+# SilkRoad Experience OS 8.0
 
 **AI-powered Tourism Business Operating System**
 
@@ -20,7 +20,16 @@ Oddiy marketplace emas. Bu mahalliy turizm bizneslarini raqamlashtiradigan, ular
    - Daromad, konversiya, eng band vaqtlar, kelmaganlar, CSV.
    - Narx taqqosi, javobsiz talab, turistlar qidirgan sanalar va tillar.
 
-## 7.0 da yangi
+## 8.0 da yangi
+
+- **Hammasi jonli**: bo‘sh joy, taklif, bron, talab paneli va ta’sir sahifasi ochiq ekranda o‘zi yangilanadi. Oqimda shaxsiy ma’lumot yo‘q.
+- **Tezkor qidiruv**: har bir harfdan keyin natija, 10 tilda; tur va hudud bo‘yicha son, tezkor kunlar, narx chegarasi. Kun band bo‘lsa, yaqin bo‘sh kunlar taklif qilinadi.
+- **Eng yaqin bo‘sh vaqt**: har bir kartada vaqt, qolgan joy va o‘sha vaqtdagi narx.
+- **Moslashuvchan narx**: dam olish kuni, oxirgi daqiqa va guruh narxi. Saqlashdan oldin natija ko‘rinadi. Narx oshsa, mehmon qayta rozilik beradi.
+- **Kutish ro‘yxati**: joy ochilsa, mehmonga bir marta xat boradi. Mezbon necha kishi kutayotganini ko‘radi va bir bosishda joy ochadi.
+- **Mezbon kuni**: yaqin tashriflar, qolgan vaqt, bronlarni saralash va qidirish.
+
+## 7.0 da
 
 - **Niyat xati** (`/hamkor`): usta, mehmonxona yoki hamkor xatni o‘qib, narx va rozi bo‘ladigan komissiyasi bilan imzolaydi. Ma’mur qo‘ng‘iroq qilib tasdiqlaydi, faqat tasdiqlangani sanaladi.
 - **Jonli sahna** (`/stage`): sayyoh, usta va ochiq natija bitta ekranda, haqiqatan bog‘langan. O‘zbekcha yoki inglizcha, taqdimot pulti bilan, faqat namoyishda.

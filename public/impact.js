@@ -1,5 +1,5 @@
 // Public impact page: where travellers' money goes. Uzbek, English and Russian.
-import { api, el, GEO, store, uzs } from "/common.js";
+import { api, counter, el, GEO, store, subscribe, uzs } from "/common.js";
 import { icon } from "/art.js";
 import { demoBanner, themePicker } from "/pwa.js";
 
@@ -13,25 +13,30 @@ let lang = [new URLSearchParams(location.search).get("lang"), store.get("lang")]
 pick.value = lang;
 pick.onchange = () => { lang = pick.value; store.set("lang", lang); draw(); };
 let data = null, cfg = null;
+const liveBadge = el("span.live", { hidden: true }, el("i"), el("span"));
 const pct = (x) => (x == null ? "—" : `${Math.round(x * 100)}%`);
 
 function draw() {
   const t = T[lang], k = data.totals, fx = lang === "en" && cfg.fx?.rates?.USD ? { code: "USD", rate: cfg.fx.rates.USD } : null, money = (n) => (n == null ? "—" : uzs(n, lang, fx)), name = (r) => cfg.regionNames[r][lang];
   document.documentElement.lang = lang;
+  liveBadge.lastChild.textContent = { uz: "Jonli", en: "Live", ru: "Онлайн" }[lang];
   document.title = `${t.title} | SilkRoad`;
   $("toPanel").textContent = t.panel;
   $("here").textContent = t.here;
   $("foot").textContent = t.foot;
   $("prefs").replaceChildren(themePicker({ theme: t.theme[0], auto: t.theme[1], light: t.theme[2], dark: t.theme[3] }));
   const max = Math.max(1, ...data.regions.map((r) => r.visits)), live = data.regions.filter((r) => r.visits).sort((a, b) => b.visits - a.visits);
-  const tile = (v, label) => el("div.card.tile", {}, el("b", {}, v), el("span.muted", {}, label));
-  app.replaceChildren(el("div.wrap", {}, el("div.stack", { style: "gap:10px" }, el("h1", {}, t.title), el("p.muted", { style: "max-width:64ch" }, t.sub)), data.sample && el("div.note.warn", { role: "status" }, t.sample),
+  const tile = (key, v, label, show) => el("div.card.tile", {}, v == null ? el("b", {}, "—") : counter(key, v, show), el("span.muted", {}, label)), whole = (n) => `${Math.round(n)}%`;
+  app.replaceChildren(el("div.wrap", {}, el("div.stack", { style: "gap:10px" }, el("div.row", {}, el("h1", {}, t.title), liveBadge), el("p.muted", { style: "max-width:64ch" }, t.sub)), data.sample && el("div.note.warn", { role: "status" }, t.sample),
     k.visits === 0 ? el("div.card.empty", {}, el("p", {}, t.empty)) : [
-      el("section.card.bigshare", {}, el("div", {}, el("b.huge", {}, String(Math.round((k.host_share ?? 0) * 100))), el("p", {}, t.share)), el("div.sharebar", { role: "img", "aria-label": `${pct(k.host_share)} ${t.share}` }, el("i", { style: `width:${(k.host_share ?? 0) * 100}%` }))),
-      el("div.tiles.three", {}, tile(money(k.host_income_uzs), t.income), tile(String(k.hosts), t.hosts), tile(money(k.per_host_uzs), t.perHost), tile(pct(k.outside_capital), t.outside), tile(String(k.guests), t.guests), tile(String(k.languages), t.langs)),
+      el("section.card.bigshare", {}, el("div", {}, counter("share", Math.round((k.host_share ?? 0) * 100), String, "b.huge"), el("p", {}, t.share)), el("div.sharebar", { role: "img", "aria-label": `${pct(k.host_share)} ${t.share}` }, el("i", { style: `width:${(k.host_share ?? 0) * 100}%` }))),
+      el("div.tiles.three", {}, tile("income", k.host_income_uzs, t.income, money), tile("hosts", k.hosts, t.hosts), tile("per", k.per_host_uzs, t.perHost, money), tile("out", k.outside_capital == null ? null : Math.round(k.outside_capital * 100), t.outside, whole), tile("guests", k.guests, t.guests), tile("langs", k.languages, t.langs)),
       el("section.stack", { style: "gap:16px" }, el("div", {}, el("h2", {}, t.map), el("p.muted.small", {}, t.mapNote)),
         el("ul.tilemap.geo", {}, data.regions.map((r) => el("li", { style: `--c:${GEO[r.region][0]};--r:${GEO[r.region][1]}` }, el("div" + (r.visits ? "" : ".none"), { style: r.visits ? `background:color-mix(in srgb, var(--turq) ${8 + Math.round((r.visits / max) * 26)}%, var(--card))` : null }, name(r.region), el("b", {}, String(r.visits)))))),
         el("div.scroll", { tabindex: 0, role: "region", "aria-label": t.map }, el("table", {}, el("thead", {}, el("tr", {}, el("th", { scope: "col" }, t.table), el("th.n", { scope: "col" }, t.visits), el("th.n", { scope: "col" }, t.money))), el("tbody", {}, live.map((r) => el("tr", {}, el("td", {}, name(r.region)), el("td.n", {}, String(r.visits)), el("td.n", {}, r.income_uzs == null ? t.few : money(r.income_uzs))))))))],
     el("section.card", {}, el("h2", {}, t.how), el("ul.promise", {}, [["check", t.how1], ["shield", t.how2], ["people", t.how3]].map(([i, x]) => el("li", {}, icon(i, 26), x))), el("p.muted.small", {}, `${t.now}: ${data.supply.listings} ${t.offers}, ${data.supply.regions} ${t.regions}`))));
 }
-try { [data, cfg] = await Promise.all([api("/api/impact"), api("/api/config")]); demoBanner(cfg, "Demo"); draw(); } catch (e) { app.replaceChildren(el("div.wrap", {}, el("div.note.bad", { role: "alert" }, e.message))); }
+try { [data, cfg] = await Promise.all([api("/api/impact"), api("/api/config")]); demoBanner(cfg, "Demo"); draw();
+  const again = async () => { const d = await api("/api/impact").catch(() => null); if (d && JSON.stringify(d) !== JSON.stringify(data)) { data = d; if (!app.contains(document.activeElement) || document.activeElement === app) draw(); } };
+  subscribe("/api/live", (ev) => { if (ev.t === "hello") liveBadge.hidden = false; else if (ev.t !== "slots") again(); });
+} catch (e) { app.replaceChildren(el("div.wrap", {}, el("div.note.bad", { role: "alert" }, e.message))); }

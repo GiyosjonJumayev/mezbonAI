@@ -1,5 +1,5 @@
 // Trip planner and trip page. `ctx` carries the shared helpers of the traveller app.
-import { PAY_NAME, api, el, store, toast, visual } from "/common.js";
+import { PAY_NAME, api, el, store, toast, uzs, visual } from "/common.js";
 import { icon } from "/art.js";
 
 /** Remembers the form while the traveller looks at one experience and comes back. */
@@ -51,7 +51,7 @@ export function planner(ctx, id) {
         return el("li", {}, el("div.row.between", {}, el("h2", {}, `${lang === "zh" ? `第${n + 1}天` : lang === "ko" || lang === "ja" ? `${n + 1}${t("tripDay")}` : lang === "uz" ? `${n + 1}-kun` : lang === "tr" ? `${n + 1}. ${t("tripDay")}` : `${t("tripDay")} ${n + 1}`}`), el("span.muted", {}, `${longDate(d.date)} · ${regionName(d.region)}`)),
           moved && el("p.small.travel", {}, icon("route", 18), `${t("tripMove")} ${regionName(d.region)}`),
           d.items.length ? d.items.map((x) => el("article.stop", {}, el("div.art", {}, visual({ ...x, id: x.listing_id }), x.demo && el("span.badge", {}, t("sample"))),
-            el("div.stack", { style: "gap:5px" }, el("b", { dir: "ltr", style: "justify-self:start" }, x.time), el("h3", {}, x.i18n[lang].title), el("p.small.muted", {}, `${x.host} · ${placeOf(x)} · ${x.duration_min} ${t("minutes")}`), el("span.price", {}, money(x.price_uzs), " ", el("small", {}, t("perPerson"))),
+            el("div.stack", { style: "gap:5px" }, el("b", { dir: "ltr", style: "justify-self:start" }, x.time), el("h3", {}, x.i18n[lang].title), el("p.small.muted", {}, `${x.host} · ${placeOf(x)} · ${x.duration_min} ${t("minutes")}`), el("span.price", {}, x.before_uzs > x.price_uzs && [el("s", {}, uzs(x.before_uzs, lang, null)), " "], money(x.price_uzs), " ", el("small", {}, t("perPerson"))),
               el("div.row", {}, link({ l: x.listing_id }, "a", {}, t("open")), x.more && el("button.ghost.mini.text", { type: "button", "aria-label": `${t("swap")}: ${x.i18n[lang].title}`, onclick: (e) => { skip = [...skip, x.listing_id]; build(e); } }, t("swap")),
                 el("button.ghost.mini.text", { type: "button", "aria-label": `${t("remove")}: ${x.i18n[lang].title}`, onclick: () => { d.items = d.items.filter((y) => y !== x); show(); } }, t("remove"))))))
             : el("p.muted", {}, t("tripFree")));
@@ -60,14 +60,14 @@ export function planner(ctx, id) {
     const reserve = run(async () => {
       store.set("name", name.value.trim());
       try {
-        const trip = await api("/api/trips", { guests: plan.asked.guests, guest_name: name.value, ...contact.value(), lang, hotel_code: hotel?.code, items: plan.days.flatMap((d) => d.items.map((x) => ({ listing_id: x.listing_id, date: d.date, time: x.time }))) });
+        const trip = await api("/api/trips", { guests: plan.asked.guests, guest_name: name.value, ...contact.value(), lang, hotel_code: hotel?.code, items: plan.days.flatMap((d) => d.items.map((x) => ({ listing_id: x.listing_id, date: d.date, time: x.time, expect_uzs: x.price_uzs * plan.asked.guests }))) });
         store.set("trips", JSON.stringify([trip.token, ...store.json("trips", [])].slice(0, 10)));
         store.set("bookings", JSON.stringify([...trip.bookings.map((b) => b.token), ...store.json("bookings", [])].slice(0, 40)));
         plan = null;
         skip = [];
         go({ trip: trip.token });
       } catch (e) {
-        if (!["full", "closed", "past", "notfound"].includes(e.code)) throw e;
+        if (!["full", "closed", "past", "notfound", "price"].includes(e.code)) throw e;
         toast(why(e), true); // someone was faster: look again at what is free now
         await build({});
       }

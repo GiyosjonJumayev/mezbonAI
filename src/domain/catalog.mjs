@@ -2,7 +2,8 @@
 import { buildListing } from "../ai/claude.mjs";
 import { missing, templateI18n } from "../ai/extract.mjs";
 import { CATEGORIES, LANGS, REGIONS } from "../lib/i18n.mjs";
-import { bad, fail, id, int, isDate, known, lang, notFound, str } from "../lib/util.mjs";
+import { bad, fail, id, int, isDate, known, lang, notFound, str, today } from "../lib/util.mjs";
+import { cleanPricing, unitPrice } from "./pricing.mjs";
 
 export const MAX_PHOTOS = 6;
 const OPEN = "l.status='published' AND h.suspended_at IS NULL";
@@ -15,13 +16,21 @@ const LISTING = `SELECT l.*, h.name host_name, h.demo host_demo, h.type host_typ
 
 export const publicListing = (r) => ({
   id: r.id, host_id: r.host_id, category: r.category, region: r.region, place: r.place, price_uzs: r.price_uzs, duration_min: r.duration_min,
-  capacity: r.capacity, weekdays: r.weekdays, times: r.times, i18n: r.i18n, photo: r.photos[0] ?? null, photos: r.photos, hosted: r.hosted,
+  capacity: r.capacity, weekdays: r.weekdays, times: r.times, i18n: r.i18n, photo: r.photos[0] ?? null, photos: r.photos, hosted: r.hosted, pricing: r.pricing,
   host: r.host_name, host_type: r.host_type, verified: Boolean(r.host_verified), demo: r.host_demo,
   rating: r.rating == null ? null : Math.round(r.rating * 10) / 10, reviews: r.review_count,
 });
 export const hostListing = (r) => ({ ...publicListing(r), status: r.status, cert_no: r.cert_no, address: r.address, lat: r.lat, lng: r.lng, transcript: r.transcript, engine: r.engine, edited: r.edited, closed: r.closed, missing: missing(r) });
 
-export function createCatalog({ db, accounts, plans }) {
+/** How far ahead a card looks for the next free time. */
+const LOOK_AHEAD = 14;
+/** The first time with room for `guests`, and what it costs then. */
+function nextSlot(l, days, guests) {
+  for (const d of days ?? []) for (const t of d.times) if (t.free >= guests) { const { unit, before, why, pct } = unitPrice(l, d.date, t.time, guests); return { date: d.date, time: t.time, free: t.free, unit, before, why, pct }; }
+  return null;
+}
+
+export function createCatalog({ db, accounts, plans, events }) {
   const ownListings = (hostId) => db.all(`${LISTING} WHERE l.host_id=? ORDER BY l.created_at DESC, l.id`, hostId);
   async function ownListing(credential, lid) {
     const h = await accounts.authHost(credential);
@@ -41,7 +50,9 @@ export function createCatalog({ db, accounts, plans }) {
     await db.one("SELECT id FROM listings WHERE id=? FOR UPDATE", own.id);
     const l = await ownListing(credential, lid);
     await fn(l);
-    return hostListing(await ownListing(credential, lid));
+    const now = await ownListing(credential, lid);
+    if (l.status !== "draft" || now.status !== "draft") events.emit("listing", { listing: own.id });
+    return hostListing(now);
   });
 
   const api = {
@@ -73,6 +84,7 @@ export function createCatalog({ db, accounts, plans }) {
         if (p.point && !(Number.isFinite(lat) && Number.isFinite(lng) && lat >= 37 && lat <= 46 && lng >= 55 && lng <= 74)) throw bad("Nuqta O‘zbekiston hududida bo‘lsin");
         [n.lat, n.lng] = p.point ? [Math.round(lat * 1e5) / 1e5, Math.round(lng * 1e5) / 1e5] : [null, null];
       }
+      if ("pricing" in p) n.pricing = cleanPricing(p.pricing);
       if ("cert_no" in p) n.cert_no = p.cert_no ? str(p.cert_no, "Sertifikat", 40) : null;
       if ("weekdays" in p) {
         if (!Array.isArray(p.weekdays) || !p.weekdays.length || p.weekdays.some((d) => !Number.isInteger(d) || d < 1 || d > 7)) throw bad("Kamida bitta ish kunini tanlang");
@@ -100,8 +112,8 @@ export function createCatalog({ db, accounts, plans }) {
       }
       const gaps = missing(n);
       if (l.status === "published" && gaps.length) throw bad(gaps[0].text);
-      await db.run("UPDATE listings SET category=?,region=?,place=?,price_uzs=?,duration_min=?,capacity=?,cert_no=?,weekdays=?,times=?,closed=?,i18n=?,edited=?,address=?,lat=?,lng=? WHERE id=?",
-        n.category, n.region, n.place, n.price_uzs, n.duration_min, n.capacity, n.cert_no ?? null, JSON.stringify(n.weekdays), JSON.stringify(n.times), JSON.stringify(n.closed), JSON.stringify(n.i18n), JSON.stringify(n.edited), n.address, n.lat, n.lng, l.id);
+      await db.run("UPDATE listings SET category=?,region=?,place=?,price_uzs=?,duration_min=?,capacity=?,cert_no=?,weekdays=?,times=?,closed=?,i18n=?,edited=?,address=?,lat=?,lng=?,pricing=? WHERE id=?",
+        n.category, n.region, n.place, n.price_uzs, n.duration_min, n.capacity, n.cert_no ?? null, JSON.stringify(n.weekdays), JSON.stringify(n.times), JSON.stringify(n.closed), JSON.stringify(n.i18n), JSON.stringify(n.edited), n.address, n.lat, n.lng, JSON.stringify(n.pricing), l.id);
     }),
 
     addPhoto: (credential, lid, file) => change(credential, lid, async ({ id: lid_, photos }) => {
@@ -136,15 +148,23 @@ export function createCatalog({ db, accounts, plans }) {
       return { photos: l.photos };
     },
 
-    /** `open` gives the free places of many listings on a day; it is passed in so this module does not depend on availability. */
+    /** `open(rows, from, days)` gives the free places of many listings; it is passed in so this module does not depend on availability. */
     async search({ region, category, date, guests, lang: lg, source = "web", log = true }, open) {
       const r = known(REGIONS, region), c = known(CATEGORIES, category), d = isDate(date) ? date : null;
       const n = Number.isInteger(guests) && guests > 0 ? Math.min(guests, 1000) : 1;
       let rows = await db.all(`${LISTING} WHERE ${ON_SALE} AND (?::text IS NULL OR l.region=?) AND (?::text IS NULL OR l.category=?) AND l.capacity >= ? ORDER BY l.published_at DESC, l.id LIMIT 200`, r, r, c, c, n);
-      if (d && rows.length) { const at = await open(rows, d); rows = rows.filter((l) => at.get(l.id).some((x) => x.times.some((t) => t.free >= n))); }
+      const at = rows.length ? await open(rows, d ?? today(), d ? 1 : LOOK_AHEAD) : new Map(), next = new Map(rows.map((l) => [l.id, nextSlot(l, at.get(l.id), n)]));
+      if (d) rows = rows.filter((l) => next.get(l.id));
       // Only a search that names a region or an activity says something about demand.
-      if (log && (r || c)) await db.run("INSERT INTO searches (region,category,results,lang,source,for_date,guests) VALUES (?,?,?,?,?,?,?)", r, c, rows.length, lang(lg), source, d, n > 1 ? n : null);
-      return rows.map(publicListing);
+      if (log && (r || c)) { await db.run("INSERT INTO searches (region,category,results,lang,source,for_date,guests) VALUES (?,?,?,?,?,?,?)", r, c, rows.length, lang(lg), source, d, n > 1 ? n : null); events.emit("numbers"); }
+      return rows.map((l) => ({ ...publicListing(l), next: next.get(l.id) }));
+    },
+    /** Only the next free time of some listings: what a card on screen needs after a change. */
+    async nextTimes(ids, { date, guests } = {}, open) {
+      const list = [...new Set(ids)].filter((x) => /^[\w-]{1,64}$/.test(x)).slice(0, 60), d = isDate(date) ? date : null, n = Number.isInteger(guests) && guests > 0 ? Math.min(guests, 1000) : 1;
+      const rows = list.length ? await db.all(`SELECT l.* FROM listings l JOIN hosts h ON h.id=l.host_id WHERE ${ON_SALE} AND l.id = ANY(?::text[])`, list) : [];
+      const at = rows.length ? await open(rows, d ?? today(), d ? 1 : LOOK_AHEAD) : new Map();
+      return Object.fromEntries(rows.map((l) => [l.id, nextSlot(l, at.get(l.id), n)]));
     },
     /** Everything on sale for a group of this size, with the schedule (the trip planner needs it). */
     onSale: (guests) => db.all(`${LISTING} WHERE ${ON_SALE} AND l.capacity >= ? ORDER BY l.published_at DESC, l.id LIMIT 300`, guests),

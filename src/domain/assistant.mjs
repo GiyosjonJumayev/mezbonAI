@@ -4,7 +4,7 @@ import { z } from "zod";
 import { LANGS, LANG_NAMES } from "../lib/i18n.mjs";
 import { extractFacts, norm, readNumber } from "../ai/extract.mjs";
 import { aiEnabled, ask, errText } from "../ai/claude.mjs";
-import { fail, isDate, tashkentNow, today } from "../lib/util.mjs";
+import { addDays, fail, isDate, tashkentNow, today } from "../lib/util.mjs";
 
 const som = (n) => `${Math.round(n).toString().replace(/\B(?=(\d{3})+$)/g, " ")} so‘m`;
 const MONTHS = ["yanvar", "fevral", "mart", "aprel", "may", "iyun", "iyul", "avgust", "sentabr", "oktabr", "noyabr", "dekabr"];
@@ -150,9 +150,15 @@ export function createAssistant({ db, core }) {
     if (!home.listings.length) add("now", "Birinchi taklifingizni yarating: hunaringiz haqida gapirib bering", { link: "yangi" });
     for (const l of home.listings.filter((x) => x.status === "draft").slice(0, 3)) add("soon", l.missing.length ? `“${l.i18n.uz.title}” qoralamasi: ${l.missing[0].text}` : `“${l.i18n.uz.title}” qoralamasi tayyor, e’lon qilish mumkin`, { link: `taklif/${l.id}`, actions: l.missing.length ? [] : propose([{ type: "publish", listing_id: l.id }], s) });
 
+    for (const w of (await core.waitingFor(live.map((l) => l.id))).slice(0, 4)) {
+      const l = live.find((x) => x.id === w.listing_id), slot = w.time && (await core.slotCalendar(key, l.id, w.date, 1)).days.find((x) => x.date === w.date)?.slots.find((x) => x.time === w.time);
+      add("now", `${w.guests} kishi joy kutmoqda: “${l.i18n.uz.title}”, ${uzDay(w.date)}${w.time ? `, ${w.time}` : ""}`, slot && slot.booked + w.guests <= 100 ? { actions: propose([{ type: "set_slot", listing_id: l.id, date: w.date, time: w.time, capacity: Math.max(slot.capacity, slot.booked) + w.guests }], s) } : { link: "kalendar" });
+    }
     for (const l of live) {
       const days = (await core.slotCalendar(key, l.id, d, 14)).days.filter((x) => x.open), clock = tashkentNow().slice(0, 16);
       const slots = days.flatMap((x) => x.slots.map((t) => ({ ...t, date: x.date }))).filter((t) => `${t.date}T${t.time}` > clock);
+      const empty = slots.filter((t) => t.capacity > 0 && !t.booked && t.date <= addDays(d, 1)).length;
+      if (empty && !l.pricing.last) add("grow", `“${l.i18n.uz.title}”: bugun va ertaga ${empty} ta vaqt bo‘sh. Oxirgi daqiqa narxini yoqasizmi?`, { link: `taklif/${l.id}` });
       if (!slots.some((t) => t.capacity > t.booked)) add("now", `“${l.i18n.uz.title}”: 14 kunda birorta bo‘sh joy yo‘q`, { link: "kalendar" });
       for (const t of slots.filter((x) => x.capacity > 0 && x.booked >= x.capacity).slice(0, 2)) {
         const more = Math.min(100, t.capacity + Math.max(1, Math.round(l.capacity / 2)));

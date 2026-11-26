@@ -1,4 +1,4 @@
-# SilkRoad Experience OS 7.0
+# SilkRoad Experience OS 8.0
 
 **AI-powered Tourism Business Operating System.** Every Local Experience. One Digital Platform. [O‘zbekcha](docs/README.uz.md)
 
@@ -12,7 +12,21 @@ A system that brings local tourism businesses in Uzbekistan online, helps them s
 
 Screenshots show made-up data. See [what still needs the outside world](#what-still-needs-the-outside-world).
 
-## What is new in 7.0
+## What is new in 8.0
+
+| | |
+|---|---|
+| **Live everywhere** | Places, offers, bookings, the demand panel and the impact page update on an open screen by themselves. The stream says only that something changed; nothing personal travels in it. |
+| **Instant search** | Results follow every keystroke in ten languages, with counts per activity and region, quick days, a price limit and a shareable address. When a day is full, the nearest free days are offered. |
+| **Next free time** | Every card shows when you can really go, how many places are left and what it costs then. |
+| **Prices that move** | Providers set weekend, last-minute and group prices and see the result before saving. One formula serves the server and the browser, and a higher price never applies without a new yes. |
+| **Waiting list** | A guest who found a full time is written to once, first come, first served. The provider sees how many wait and opens places with one tap. |
+| **Provider's day** | Coming visits with the time left to each, filters and search in bookings. |
+| **Photos on the whole screen** | Swipe, arrow keys or buttons. |
+
+![Instant search](docs/screenshots/search.png)
+
+## Since 7.0
 
 | | |
 |---|---|
@@ -131,10 +145,10 @@ src/main.mjs          starts everything; refuses unsafe settings
 src/config.mjs        the only place that reads the environment
 src/app.mjs           joins domain, notifications and HTTP
 src/db/               PostgreSQL access, transactions, numbered migrations
-src/domain/           the rules: accounts, catalog, availability, bookings, trips, plans, insights, metrics, partners, stage, assistant, admin, push, mail, rates
+src/domain/           the rules: accounts, catalog, availability, pricing, waitlist, bookings, trips, plans, insights, metrics, partners, stage, assistant, admin, push, mail, rates
 src/payments/         bills, refunds and payouts; Octo client; Click SHOP API; Payme Merchant API
 src/ai/               Claude, and the rule-based Uzbek engine used without it
-src/http/             security checks, routes, static files
+src/http/             security checks, routes, live streams, static files
 src/adapters/         Telegram bot, MCP server for AI assistants
 public/               pages in plain JavaScript modules, no build step
 test/                 every test gets its own fresh PostgreSQL database
@@ -158,9 +172,9 @@ With the server running, add this to your MCP client. It can search, plan a trip
 
 ## What has been checked
 
-- 158 automated tests on PostgreSQL 18: rules, payments, simultaneous use, security, HTTP, MCP and Telegram.
-- Page views in real Microsoft Edge (light, dark, and a 320-pixel phone): 87 in version 6, and the new or changed pages in version 7: no axe-core accessibility problems, no sideways scrolling and no console errors.
-- Sign-up, passkey sign-in and sign-out, trip planning and reservation, test payment, receipt, meeting point, refund, administration, signing a letter and the whole live stage were driven in Edge.
+- 173 automated tests on PostgreSQL 18: rules, payments, simultaneous use, security, HTTP, MCP and Telegram.
+- Page views in real Microsoft Edge (light, dark, and a 320-pixel phone): 87 in version 6, and the new or changed pages since (73 views in version 8): no axe-core accessibility problems, no sideways scrolling and no console errors.
+- Sign-up, passkey sign-in and sign-out, trip planning and reservation, test payment, receipt, meeting point, refund, administration, signing a letter, the whole live stage, live places and prices, and the waiting list were driven in Edge.
 - The Central Bank rate feed was read live.
 
 ## What still needs the outside world
@@ -176,6 +190,8 @@ With the server running, add this to your MCP client. It can search, plan a trip
 - **Guide certificates and the verified badge** depend on an administrator really looking at documents. There is no registry check.
 - **Overnight stays** are not supported. Guesthouses can sell experiences such as dinners or workshops.
 - **GetYourGuide, Viator and Klook** are not connected. There is a neutral export at `/feeds/products.json`.
+- **The waiting list** works only with a mail server.
+- **Text search** looks through the offers the page has loaded (up to 200).
 - **One server process.** Live events and rate limits are kept in memory. Running several copies needs a shared store.
 - **Law.** Contracts, taxes, fiscal receipts and Uzbek rules on storing citizens' personal data in the country need a lawyer before launch.
 

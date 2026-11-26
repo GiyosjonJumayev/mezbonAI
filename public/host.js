@@ -1,8 +1,9 @@
-import { act, api, ask, copy, el, listen, plate, som, store, tint, toast, visual } from "/common.js";
+import { act, api, ask, copy, counter, el, listen, plate, som, store, tint, toast, visual } from "/common.js";
 import { account, enter, keyCard, passkeyLogin, passkeys } from "/account.js";
 import { assistant, forget } from "/assistant.js";
 import { icon } from "/art.js";
 import { demoBanner, installButton, themePicker } from "/pwa.js";
+import { PRICE_LIMITS, unitPrice } from "/price.js";
 import { analytics, calendar, market, PLAN_NAME, plans, tickets } from "/studio.js";
 
 const app = document.getElementById("app");
@@ -24,6 +25,7 @@ const uzDate = (d) => `${+d.slice(8)}-${MONTHS[+d.slice(5, 7) - 1]}, ${WEEK[new 
 const today = () => new Date(Date.now() + 5 * 3600e3).toISOString().slice(0, 10);
 const page = (...kids) => app.replaceChildren(el("div.wrap", {}, ...kids));
 
+let show = "all", find = "";
 let home = null, stop = null, dirty = false, speech = "", freshKey = null;
 const tab = () => location.hash.slice(1) || "yordamchi";
 
@@ -171,9 +173,11 @@ function editor(l) {
   }
   showText();
 
+  const rules = priceRules(l, form, touch);
+
   async function save() {
     keep();
-    const p = { category: category.value, place: place.value, address: address.value, point, weekdays: [...days], closed: [...closed], times: times.value.split(/[,;\s]+/).filter(Boolean) };
+    const p = { category: category.value, place: place.value, address: address.value, point, weekdays: [...days], closed: [...closed], pricing: rules.value(), times: times.value.split(/[,;\s]+/).filter(Boolean) };
     if (region.value) p.region = region.value;
     if (category.value === "tour") p.cert_no = cert.value;
     for (const f of ["price_uzs", "duration_min", "capacity"]) { const v = form.elements[f].value; if (v !== "") p[f] = Number(v); }
@@ -205,7 +209,8 @@ function editor(l) {
     el("div.two", {},
       el("div.card", {}, el("h2", {}, "Ma’lumotlar"), form, meeting,
         el("div.stack", { style: "gap:6px" }, el("span.small.muted", {}, "Ish kunlari"), el("div.chips", { role: "group", "aria-label": "Ish kunlari" }, DAYS.map((d, i) => el("button", { type: "button", "aria-pressed": String(days.has(i + 1)), onclick: (e) => { touch(); days.has(i + 1) ? days.delete(i + 1) : days.add(i + 1); e.currentTarget.setAttribute("aria-pressed", String(days.has(i + 1))); } }, d)))),
-        el("div.stack", { style: "gap:6px" }, el("span.small.muted", {}, "Dam olish kunlari (bron qabul qilinmaydi)"), el("div.compose", {}, dayOff, el("button", { type: "button", onclick: () => { if (!dayOff.value) return toast("Avval sanani tanlang", true); closed.add(dayOff.value); dayOff.value = ""; touch(); drawClosed(); } }, "Qo‘shish")), closedList)),
+        el("div.stack", { style: "gap:6px" }, el("span.small.muted", {}, "Dam olish kunlari (bron qabul qilinmaydi)"), el("div.compose", {}, dayOff, el("button", { type: "button", onclick: () => { if (!dayOff.value) return toast("Avval sanani tanlang", true); closed.add(dayOff.value); dayOff.value = ""; touch(); drawClosed(); } }, "Qo‘shish")), closedList),
+        rules.node),
       el("div.card", {}, el("h2", {}, "Mehmon nimani ko‘radi"), photos, chips, el("label", {}, "Sarlavha", title), el("label", {}, "Tavsif", desc))),
     el("div.row", {},
       el("button.primary", { onclick: act(async () => { const first = l.status !== "published"; await save(); await api(`/api/host/listings/${l.id}/publish`, {}); await reload(); location.hash = first ? `tayyor/${l.id}` : "takliflar"; toast(first ? "E’lon qilindi" : "Saqlandi"); }) }, l.status === "published" ? "Saqlash" : "E’lon qilish"),
@@ -218,6 +223,33 @@ function done(l) {
   return el("div.card.empty", {}, plate(l.id, l.category), el("h2", {}, "Taklifingiz sotuvda"), el("p.muted", {}, "Havolani ulashing yoki QR kodni do‘koningizga osib qo‘ying."),
     el("img.qr", { src: `/api/qr.svg?text=${encodeURIComponent(link)}`, alt: "Taklif QR kodi" }), el("a", { href: link, target: "_blank", rel: "noopener" }, link),
     el("div.row", {}, el("button.primary", { onclick: async () => { if (await copy(link)) toast("Nusxalandi"); } }, "Havolani nusxalash"), el("a.btn", { href: "#yangi" }, "Yana taklif qo‘shish")));
+}
+
+// ---- price rules ------------------------------------------------------------------------------
+/** Weekend, last-minute and group prices, with what a guest would really pay. */
+function priceRules(l, form, touch) {
+  const p = structuredClone(l.pricing ?? {}), box = el("output.small"), pick = (value, opts, set, label) => { const s = el("select", { "aria-label": label, onchange: () => { set(Number(s.value)); touch(); say(); } }, opts.map(([v, text]) => el("option", { value: v }, text))); s.value = String(value); return s; };
+  const pcts = ([lo, hi], sign) => [[0, "yo‘q"], ...[5, 10, 15, 20, 25, 30, 40, 50].filter((n) => n >= lo && n <= hi).map((n) => [n, `${sign}${n}%`])];
+  const last = { hours: p.last?.hours ?? 24, pct: p.last?.pct ?? 0 }, group = { from: p.group?.from ?? 4, pct: p.group?.pct ?? 0 };
+  let weekend = p.weekend ?? 0;
+  const value = () => ({ ...(weekend && { weekend }), ...(last.pct && { last: { ...last } }), ...(group.pct && { group: { ...group } }) });
+  // A value set elsewhere stays selectable, so saving never changes it silently.
+  const withOwn = (opts, v, text) => (opts.some(([x]) => x === v) ? opts : [...opts, [v, text]]);
+  function say() {
+    const price = Number(form.elements.price_uzs.value), x = { price_uzs: price, pricing: value() };
+    if (!(price >= 1000)) return box.replaceChildren("Avval narxni kiriting");
+    const d = (n) => new Date(Date.now() + 5 * 3600e3 + n * 864e5).toISOString().slice(0, 10), far = [10, 11, 12, 13, 14, 15, 16].map(d), week = (s) => [6, 0].includes(new Date(s + "T00:00:00Z").getUTCDay());
+    const normal = unitPrice(x, far.find((s) => !week(s)), "10:00").unit, sat = unitPrice(x, far.find(week), "10:00").unit, many = unitPrice(x, far.find((s) => !week(s)), "10:00", group.from).unit;
+    const soon = unitPrice({ ...x, pricing: { last: value().last } }, d(0), "10:00", 1, Date.parse(`${d(0)}T09:30:00+05:00`)).unit;
+    box.replaceChildren(...[["Oddiy kun", normal], ["Dam olish kuni", sat], [`${group.from} kishidan`, many], ["Oxirgi daqiqa", soon]].map(([k, v]) => el("span", {}, `${k}: `, el("b", {}, som(v)))));
+  }
+  form.elements.price_uzs.addEventListener("input", say);
+  const node = el("div.stack.rules", { style: "gap:10px" }, el("div.stack", { style: "gap:2px" }, el("h3", {}, "Moslashuvchan narx"), el("span.small.muted", {}, "Chegirmalar qo‘shilmaydi, kattasi ishlaydi. Eski bronlar o‘zgarmaydi.")),
+    el("div.fields", {}, el("label", {}, "Shanba va yakshanba", pick(weekend, withOwn([[-20, "−20%"], [-10, "−10%"], [0, "farqsiz"], [10, "+10%"], [20, "+20%"], [30, "+30%"], [50, "+50%"]], weekend, `${weekend}%`), (v) => { weekend = v; }, "Shanba va yakshanba narxi")),
+      el("label", {}, "Oxirgi daqiqa chegirmasi", pick(last.pct, withOwn(pcts(PRICE_LIMITS.last, "−"), last.pct, `−${last.pct}%`), (v) => { last.pct = v; }, "Oxirgi daqiqa chegirmasi")), el("label", {}, "Necha soat qolganda", pick(last.hours, PRICE_LIMITS.hours.map((h) => [h, `${h} soat`]), (v) => { last.hours = v; }, "Necha soat qolganda")),
+      el("label", {}, "Guruh chegirmasi", pick(group.pct, withOwn(pcts(PRICE_LIMITS.group, "−"), group.pct, `−${group.pct}%`), (v) => { group.pct = v; }, "Guruh chegirmasi")), el("label", {}, "Necha kishidan", pick(group.from, withOwn([2, 3, 4, 5, 6, 8, 10, 12, 15, 20, 30].map((n) => [n, `${n} kishi`]), group.from, `${group.from} kishi`), (v) => { group.from = v; }, "Necha kishidan"))), box);
+  say();
+  return { node, value };
 }
 
 // ---- bookings -------------------------------------------------------------------------------
@@ -240,17 +272,34 @@ function bookingCard(b) {
     live && el("form.compose", { onsubmit: (e) => { e.preventDefault(); const v = draft.value; draft.value = ""; send(() => ({ text: v }))({ currentTarget: e.submitter }); } }, draft, el("button", { type: "submit" }, "Yuborish")));
 }
 
+/** The coming visits on one line, with the time left to each. */
+function dayLine(next) {
+  const list = next.filter((b) => ["paid", "confirmed"].includes(b.status) && !b.checked_in_at && Date.parse(`${b.date}T${b.time}:00+05:00`) > Date.now() - 2 * 3600e3).sort((a, b) => `${a.date}${a.time}`.localeCompare(`${b.date}${b.time}`)).slice(0, 6);
+  if (!list.length) return null;
+  const left = (b) => { const min = Math.round((Date.parse(`${b.date}T${b.time}:00+05:00`) - Date.now()) / 60e3); return min < 0 ? "boshlandi" : min < 60 ? `${min} daqiqadan keyin` : min < 48 * 60 ? `${Math.round(min / 60)} soatdan keyin` : `${Math.round(min / 1440)} kundan keyin`; };
+  return el("section.card", {}, el("h2", {}, "Yaqin tashriflar"), el("ol.dayline", { tabindex: 0, "aria-label": "Yaqin tashriflar" }, list.map((b) => el("li" + (b.status === "paid" ? ".wait" : ""), {}, el("b", {}, `${+b.date.slice(8)}-${MONTHS[+b.date.slice(5, 7) - 1]}, ${b.time}`), el("span", {}, `${b.guest_name}, ${b.guests} kishi`), el("span.small.muted", { dataset: { at: `${b.date}T${b.time}` } }, left(b)), b.status === "paid" && el("span.badge.warn", {}, "Javob bering")))));
+}
+
 function bookings() {
   const next = home.bookings.filter((b) => !b.past), past = home.bookings.filter((b) => b.past);
   if (!home.bookings.length) return el("div.card.empty", {}, plate("bron", "pottery"), el("h2", {}, "Hali bron yo‘q"), el("p.muted", {}, home.listings.some((l) => l.status === "published") ? "Yangi bron tushganda shu yerda chiqadi va ovoz chiqarib aytiladi." : "Avval taklif qo‘shing va e’lon qiling."), el("a.btn.primary", { href: "#yangi" }, "Taklif qo‘shish"));
-  return el("div.stack", { style: "gap:20px" }, next.length ? el("div.grid.wide", {}, next.map(bookingCard)) : el("p.muted", {}, "Kutilayotgan bron yo‘q."),
+  const d = today(), kinds = { all: ["Hammasi", () => true], wait: ["Javob kutmoqda", (b) => b.status === "paid"], today: ["Bugun", (b) => b.date === d], sure: ["Tasdiqlangan", (b) => b.status === "confirmed"] };
+  const grid = el("div.grid.wide"), chips = el("div.chips", { role: "group", "aria-label": "Bronlarni saralash" }, Object.entries(kinds).map(([k, [name, is]]) => el("button", { type: "button", dataset: { k }, onclick: () => { show = k; fill(); } }, `${name} (${next.filter(is).length})`)));
+  const word = el("input", { type: "search", placeholder: "Mehmon ismi yoki taklif", "aria-label": "Bron qidirish", value: find, oninput: () => { find = word.value; fill(); } });
+  function fill() {
+    const list = next.filter((b) => kinds[show][1](b) && `${b.guest_name} ${b.title}`.toLowerCase().includes(find.trim().toLowerCase()));
+    for (const c of chips.children) c.setAttribute("aria-pressed", String(c.dataset.k === show));
+    grid.replaceChildren(...(list.length ? list.map(bookingCard) : [el("p.muted", {}, "Bunday bron yo‘q.")]));
+  }
+  fill();
+  return el("div.stack", { style: "gap:20px" }, dayLine(next), next.length ? [el("div.toolbar", {}, chips, next.length > 4 && word), grid] : el("p.muted", {}, "Kutilayotgan bron yo‘q."),
     past.length > 0 && el("details", {}, el("summary", { style: "cursor:pointer;padding:8px 0;font-weight:600" }, `O‘tgan bronlar (${past.length})`), el("div.grid.wide", { style: "margin-block-start:12px" }, past.map(bookingCard))));
 }
 
 function listings() {
   if (!home.listings.length) return el("div.card.empty", {}, plate("taklif", "ikat"), el("h2", {}, "Hali taklif yo‘q"), el("a.btn.primary", { href: "#yangi" }, "Taklif qo‘shish"));
   return el("div.grid", {}, home.listings.map((x) => el("div.item", {}, el("div.art", { style: tint(x.category) }, visual(x), el("span.badge" + STATE[x.status][1], {}, STATE[x.status][0])),
-    el("div.in", {}, el("h2.sm", {}, x.i18n.uz.title), el("p.small.muted", {}, [x.price_uzs && som(x.price_uzs), x.duration_min && `${x.duration_min} daqiqa`, x.reviews > 0 && `★ ${x.rating} (${x.reviews})`].filter(Boolean).join(" · ")),
+    el("div.in", {}, el("h2.sm", {}, x.i18n.uz.title), el("p.small.muted", {}, [x.price_uzs && som(x.price_uzs), x.duration_min && `${x.duration_min} daqiqa`, x.reviews > 0 && `★ ${x.rating} (${x.reviews})`].filter(Boolean).join(" · ")), Object.keys(x.pricing ?? {}).length > 0 && el("p.small", {}, el("span.off", { style: "margin:0" }, "Moslashuvchan narx")),
       el("div.row", {}, el("a.btn", { href: `#taklif/${x.id}` }, "Tahrirlash"), x.status === "published" && el("a", { href: `/?l=${x.id}`, target: "_blank", rel: "noopener" }, "Ko‘rish"),
         x.status === "published" && el("button.ghost", { onclick: act(async () => { if (!(await ask("Taklif qidiruvdan olinsinmi? Mavjud bronlar saqlanadi.", "To‘xtatish", "Yo‘q"))) return; await api(`/api/host/listings/${x.id}/pause`, {}); await reload(); draw(); }) }, "To‘xtatish"))))));
 }
@@ -284,7 +333,7 @@ function draw() {
     el("div.row.between", {}, el("div.row", {}, el("h1", {}, home.name), home.verified && el("span.verified", {}, icon("shield", 18), "Tekshirilgan"), home.plan.plan !== "free" && el("span.badge.ok", {}, PLAN_NAME[home.plan.plan])), el("a.btn.primary", { href: "#yangi" }, "Yangi taklif")),
     freshKey && keyCard(freshKey, home.name, () => { freshKey = null; draw(); }),
     home.suspended && cur !== "hisob" && el("div.note.bad", { role: "alert" }, "Hisobingiz ma’muriyat tomonidan to‘xtatilgan. Takliflaringiz ko‘rinmaydi."),
-    cur === "bronlar" && home.bookings.length > 0 && el("div.tiles", {}, [["Tasdiqlangan daromad" + (cfg.testPayments ? " (sinov)" : ""), som(home.sums.earned)], ["Tasdiqlangan mehmonlar", String(home.sums.guests)], ["Javob kutayotgan bronlar", String(home.sums.waiting)]].map(([k, v]) => el("div.card.tile", {}, el("b", {}, v), el("span.muted", {}, k)))),
+    cur === "bronlar" && home.bookings.length > 0 && el("div.tiles", {}, [["Tasdiqlangan daromad" + (cfg.testPayments ? " (sinov)" : ""), home.sums.earned, som], ["Tasdiqlangan mehmonlar", home.sums.guests], ["Javob kutayotgan bronlar", home.sums.waiting]].map(([k, v, f]) => el("div.card.tile", {}, counter(k, v, f), el("span.muted", {}, k)))),
     group[1].length > 1 && el("nav.chips.sub", { "aria-label": group[0] }, group[1].map(([id, text]) => el("a.chip", { href: "#" + id, "aria-current": cur === id ? "page" : null }, text, count(id)))), body)));
   for (const i of app.querySelectorAll("[data-keep]")) { i.value = kept[i.dataset.keep] ?? ""; if (i.dataset.keep === active) i.focus(); }
   for (const c of app.querySelectorAll(".chat")) c.scrollTo(0, 1e6);
@@ -313,7 +362,8 @@ async function start() {
   stop = listen("/api/host/events", async (ev) => {
     try { await reload(); } catch { return; }
     // Never redraw over a form or a recording; news still arrives as a toast and by voice.
-    if (["bronlar", "takliflar"].includes(tab())) draw();
+    // A search being typed is not interrupted either.
+    if (["bronlar", "takliflar"].includes(tab()) && document.activeElement?.type !== "search") draw();
     else if (tab() === "yordamchi") app.querySelector(".shell > .stack > .stack:last-child")?.refresh?.();
     const b = home.bookings.find((x) => x.id === ev.id);
     if (!b) return;
