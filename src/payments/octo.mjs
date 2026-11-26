@@ -34,8 +34,10 @@ export function createOcto({ octo, fiscal, publicUrl, fetchFn = fetch }) {
       if (d.status === "succeeded") return "paid";
       return /^cancel+ed$/.test(d.status) ? "cancelled" : "open";
     },
-    async refund(p) {
-      const d = await call("refund", { shop_refund_id: `${p.id}-r`, octo_payment_UUID: p.ext_id, amount: p.amount_uzs });
+    /** How much of a payment Octo has already sent back. */
+    async refunded(p) { return Number((await call("prepare_payment", { shop_transaction_id: p.id })).refunded_sum) || 0; },
+    async refund(p, r) {
+      const d = await call("refund", { shop_refund_id: r.id, octo_payment_UUID: p.ext_id, amount: r.amount_uzs });
       return d.status === "succeeded";
     },
   };

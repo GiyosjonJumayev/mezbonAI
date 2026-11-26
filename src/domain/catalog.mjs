@@ -17,7 +17,7 @@ export const publicListing = (r) => ({
   host: r.host_name, host_type: r.host_type, verified: Boolean(r.host_verified), demo: r.host_demo,
   rating: r.rating == null ? null : Math.round(r.rating * 10) / 10, reviews: r.review_count,
 });
-export const hostListing = (r) => ({ ...publicListing(r), status: r.status, cert_no: r.cert_no, transcript: r.transcript, engine: r.engine, edited: r.edited, closed: r.closed, missing: missing(r) });
+export const hostListing = (r) => ({ ...publicListing(r), status: r.status, cert_no: r.cert_no, address: r.address, lat: r.lat, lng: r.lng, transcript: r.transcript, engine: r.engine, edited: r.edited, closed: r.closed, missing: missing(r) });
 
 export function createCatalog({ db, accounts, plans }) {
   const ownListings = (hostId) => db.all(`${LISTING} WHERE l.host_id=? ORDER BY l.created_at DESC, l.id`, hostId);
@@ -65,6 +65,12 @@ export function createCatalog({ db, accounts, plans }) {
       if ("price_uzs" in p) n.price_uzs = int(p.price_uzs, "Narx", 1000, 100_000_000);
       if ("duration_min" in p) n.duration_min = int(p.duration_min, "Davomiylik", 15, 720);
       if ("capacity" in p) n.capacity = int(p.capacity, "Mehmonlar soni", 1, 100);
+      if ("address" in p) n.address = p.address ? str(p.address, "Manzil", 200) : null;
+      if ("point" in p) {
+        const { lat, lng } = p.point ?? {};
+        if (p.point && !(Number.isFinite(lat) && Number.isFinite(lng) && lat >= 37 && lat <= 46 && lng >= 55 && lng <= 74)) throw bad("Nuqta O‘zbekiston hududida bo‘lsin");
+        [n.lat, n.lng] = p.point ? [Math.round(lat * 1e5) / 1e5, Math.round(lng * 1e5) / 1e5] : [null, null];
+      }
       if ("cert_no" in p) n.cert_no = p.cert_no ? str(p.cert_no, "Sertifikat", 40) : null;
       if ("weekdays" in p) {
         if (!Array.isArray(p.weekdays) || !p.weekdays.length || p.weekdays.some((d) => !Number.isInteger(d) || d < 1 || d > 7)) throw bad("Kamida bitta ish kunini tanlang");
@@ -92,8 +98,8 @@ export function createCatalog({ db, accounts, plans }) {
       }
       const gaps = missing(n);
       if (l.status === "published" && gaps.length) throw bad(gaps[0].text);
-      await db.run("UPDATE listings SET category=?,region=?,place=?,price_uzs=?,duration_min=?,capacity=?,cert_no=?,weekdays=?,times=?,closed=?,i18n=?,edited=? WHERE id=?",
-        n.category, n.region, n.place, n.price_uzs, n.duration_min, n.capacity, n.cert_no ?? null, JSON.stringify(n.weekdays), JSON.stringify(n.times), JSON.stringify(n.closed), JSON.stringify(n.i18n), JSON.stringify(n.edited), l.id);
+      await db.run("UPDATE listings SET category=?,region=?,place=?,price_uzs=?,duration_min=?,capacity=?,cert_no=?,weekdays=?,times=?,closed=?,i18n=?,edited=?,address=?,lat=?,lng=? WHERE id=?",
+        n.category, n.region, n.place, n.price_uzs, n.duration_min, n.capacity, n.cert_no ?? null, JSON.stringify(n.weekdays), JSON.stringify(n.times), JSON.stringify(n.closed), JSON.stringify(n.i18n), JSON.stringify(n.edited), n.address, n.lat, n.lng, l.id);
     }),
 
     addPhoto: (credential, lid, file) => change(credential, lid, async ({ id: lid_, photos }) => {

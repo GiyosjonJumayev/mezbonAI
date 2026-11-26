@@ -14,7 +14,7 @@ import { tashkentNow } from "../src/lib/util.mjs";
 process.env.MEZBON_OFFLINE ??= "1";
 if (!process.env.TEST_TEMPLATE) throw new Error("Testlarni `npm test` orqali ishga tushiring");
 const open = [];
-after(() => Promise.all(open.map((close) => Promise.resolve(close()).catch(() => {}))));
+after(async () => { for (const close of open) await Promise.resolve(close()).catch(() => {}); });
 
 async function admin(sql) {
   const c = new pg.Client({ connectionString: process.env.TEST_ADMIN_URL });
@@ -30,13 +30,14 @@ export async function freshDb({ owner = false } = {}) {
   }
   const u = new URL(owner ? process.env.TEST_ADMIN_URL : process.env.TEST_APP_URL);
   u.pathname = `/${name}`;
-  const db = createDatabase(u.href, { max: 6 });
+  const db = createDatabase(u.href, { max: 6, idle: 400 });
   db.url = u.href;
-  open.unshift(() => db.close()); // servers opened later are closed first
+  open.unshift(async () => { await db.close(); await admin(`DROP DATABASE IF EXISTS ${name} WITH (FORCE)`); }); // servers opened later are closed first
   return db;
 }
 export const testConfig = (env = {}) => ({ ...loadConfig({ DATABASE_URL: "x", PUBLIC_URL: "http://localhost:4321", ...env }), dataDir: mkdtempSync(path.join(os.tmpdir(), "silkroad-")) });
 export const OCTO = { PUBLIC_URL: "https://silkroad.test", OCTO_SHOP_ID: "77", OCTO_SECRET: "octo-secret" };
+export const CLICK = { PUBLIC_URL: "https://silkroad.test", CLICK_SERVICE_ID: "31", CLICK_MERCHANT_ID: "20", CLICK_MERCHANT_USER_ID: "4", CLICK_SECRET: "click-key" };
 export const PAYME = { PUBLIC_URL: "https://silkroad.test", PAYME_MERCHANT_ID: "m1", PAYME_KEY: "payme-key" };
 
 export const day = (n) => tashkentNow(new Date(Date.now() + n * 864e5)).slice(0, 10);

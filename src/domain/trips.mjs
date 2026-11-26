@@ -106,7 +106,7 @@ export function createTrips({ db, catalog, availability, bookings }) {
         await db.run("INSERT INTO trips (id,token,guest_name,lang) VALUES (?,?,?,?)", t.id, t.token, name, lang(p.lang));
         // Always the same order, so two trips never wait for each other.
         for (const x of [...items].sort((a, b) => a.listing_id.localeCompare(b.listing_id))) {
-          try { await bookings.book({ listing_id: x.listing_id, date: x.date, time: x.time, guests, guest_name: name, lang: p.lang, hotel_code: p.hotel_code, trip_id: t.id }); }
+          try { await bookings.book({ listing_id: x.listing_id, date: x.date, time: x.time, guests, guest_name: name, lang: p.lang, email: p.email, phone: p.phone, hotel_code: p.hotel_code, trip_id: t.id }); }
           catch (e) { if (e.status) e.item = { listing_id: x.listing_id, date: x.date, time: x.time }; throw e; }
         }
       });
@@ -117,7 +117,7 @@ export function createTrips({ db, catalog, availability, bookings }) {
       if (!t) throw notFound("Sayohat topilmadi");
       const rows = await db.all("SELECT token FROM bookings WHERE trip_id=? ORDER BY date, time", t.id);
       const list_ = await Promise.all(rows.map((r) => bookings.guestBooking(r.token)));
-      return { token: t.token, guest_name: t.guest_name, lang: t.lang, bookings: list_.map(({ messages, ...b }) => b), total_uzs: list_.filter((b) => ["pending", "paid", "confirmed"].includes(b.status)).reduce((s, b) => s + b.total_uzs, 0), waiting: list_.filter((b) => b.status === "pending").length };
+      return { id: t.id, token: t.token, guest_name: t.guest_name, lang: t.lang, bookings: list_.map(({ messages, ...b }) => b), total_uzs: list_.filter((b) => ["pending", "paid", "confirmed"].includes(b.status)).reduce((s, b) => s + b.total_uzs, 0), waiting: list_.filter((b) => b.status === "pending").length };
     },
   };
   return api;

@@ -146,6 +146,7 @@ export function createAssistant({ db, core }) {
     const asking = home.bookings.filter((b) => ["paid", "confirmed"].includes(b.status) && b.messages.at(-1)?.sender === "guest");
     for (const b of asking.slice(0, 3)) add("now", `${b.guest_name} so‘ramoqda: “${b.messages.at(-1).translated}”`, { link: "bronlar" });
     const live = home.listings.filter((l) => l.status === "published");
+    for (const l of live.filter((x) => !x.address && x.lat == null && home.bookings.some((b) => b.listing_id === x.id && !b.past && ["paid", "confirmed"].includes(b.status))).slice(0, 2)) add("now", `“${l.i18n.uz.title}”: manzil yo‘q, kelayotgan mehmon sizni topa olmaydi`, { link: `taklif/${l.id}` });
     if (!home.listings.length) add("now", "Birinchi taklifingizni yarating: hunaringiz haqida gapirib bering", { link: "yangi" });
     for (const l of home.listings.filter((x) => x.status === "draft").slice(0, 3)) add("soon", l.missing.length ? `“${l.i18n.uz.title}” qoralamasi: ${l.missing[0].text}` : `“${l.i18n.uz.title}” qoralamasi tayyor, e’lon qilish mumkin`, { link: `taklif/${l.id}`, actions: l.missing.length ? [] : propose([{ type: "publish", listing_id: l.id }], s) });
 

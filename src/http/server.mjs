@@ -13,7 +13,7 @@ const device = (ua = "") => [/Edg/.test(ua) ? "Edge" : /Firefox/.test(ua) ? "Fir
 export function createHttp(app) {
   const { core, payments, config } = app;
   const photos = path.join(config.dataDir, "photos");
-  const routes = createRoutes({ ...app, photos }), serve = createStatic({ photos }), admins = adminSessions(config.adminKey);
+  const routes = createRoutes({ ...app, photos }), serve = createStatic({ photos }), admins = adminSessions(config.adminKey, config.adminTotp);
   const streams = new Map(); // host id → Set of open event streams
   const limitWrite = limiter(90, 60e3), limitPayCallback = limiter(1200, 60e3), limitRead = limiter(600, 60e3);
   const SESSION = config.https ? "__Host-sr" : "sr", ADMIN = config.https ? "__Host-sra" : "sra";
@@ -32,6 +32,7 @@ export function createHttp(app) {
         limitPayCallback(ip);
         const raw = (await readBody(req, 20e3)).toString();
         if (pathname === "/pay/payme") return json(200, await payments.payme(req.headers.authorization, raw, ip));
+        if (pathname === "/pay/click") return json(200, await payments.click(raw));
         if (pathname === "/pay/octo") {
           let body;
           try { body = JSON.parse(raw); } catch { throw fail(400, "JSON noto‘g‘ri"); }
@@ -43,7 +44,7 @@ export function createHttp(app) {
       if (req.method === "POST") checkOrigin(req, config, Boolean(jar[SESSION] || jar[ADMIN]));
       const setCookie = (c) => res.setHeader("Set-Cookie", [...[res.getHeader("Set-Cookie") ?? []].flat(), c]);
       const session = { token: jar[SESSION], set: (v, age) => setCookie(cookie(SESSION, v, age, config.https)) };
-      const adminSession = { open: (k) => setCookie(cookie(ADMIN, admins.open(k), admins.maxAge, config.https)), close: () => setCookie(cookie(ADMIN, "", 0, config.https)) };
+      const adminSession = { twoStep: admins.twoStep, open: (k, c) => setCookie(cookie(ADMIN, admins.open(k, c), admins.maxAge, config.https)), close: () => setCookie(cookie(ADMIN, "", 0, config.https)) };
 
       if (pathname === "/api/host/events" && req.method === "GET") {
         const h = await core.authHost(key), set = streams.get(h.id) ?? new Set();

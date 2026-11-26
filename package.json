@@ -1,6 +1,6 @@
 {
   "name": "silkroad-experience-os",
-  "version": "5.0.0",
+  "version": "6.0.0",
   "description": "Tourism business platform for Uzbekistan: experience booking with real payments, AI business assistant, demand intelligence. PostgreSQL.",
   "private": true,
   "license": "UNLICENSED",
@@ -18,12 +18,15 @@
     "check": "node scripts/check.mjs",
     "test": "node scripts/test.mjs",
     "demo": "node --env-file-if-exists=.env scripts/demo.mjs",
-    "backup": "node --env-file-if-exists=.env scripts/backup.mjs"
+    "backup": "node --env-file-if-exists=.env scripts/backup.mjs",
+    "doctor": "node --env-file-if-exists=.env scripts/doctor.mjs",
+    "admin:totp": "node scripts/totp.mjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^1.13.0",
     "@modelcontextprotocol/sdk": "^1.32.2",
     "@simplewebauthn/server": "^14.1.0",
+    "nodemailer": "^10.6.1",
     "pg": "^8.23.1",
     "qrcode": "^1.5.4",
     "web-push": "^4.0.0",

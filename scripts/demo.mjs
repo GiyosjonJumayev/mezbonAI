@@ -26,8 +26,14 @@ await owner.migrate({ grantTo: "silkroad_app" });
 await owner.close();
 
 const db = createDatabase(at(local.app));
-const config = { ...loadConfig({ DATABASE_URL: at(local.app), PORT: String(port), ADMIN_KEY: adminKey, PUBLIC_URL: `http://localhost:${port}` }), dataDir: mkdtempSync(path.join(os.tmpdir(), "silkroad-demo-")) };
-const app = await createApp({ db, config, telegram: null, pushSend: async () => {} }), { core, payments, admin } = app;
+const config = { ...loadConfig({ DATABASE_URL: at(local.app), PORT: String(port), ADMIN_KEY: adminKey, ADMIN_TOTP: process.env.DEMO_TOTP, PUBLIC_URL: `http://localhost:${port}` }), dataDir: mkdtempSync(path.join(os.tmpdir(), "silkroad-demo-")) };
+// E-mails of the demo are printed here instead of being sent.
+config.mail ??= { url: "smtp://demo", from: "SilkRoad <demo@localhost>" };
+const mailer = { sendMail: async (m) => { if (app?.server.listening) console.log(`[email] ${m.to}: ${m.subject}
+${m.text}
+`); } };
+const app = await createApp({ db, config, telegram: null, pushSend: async () => {}, mailer });
+const { core, payments, admin } = app;
 const day = (n) => addDays(today(), n);
 await seed(db, core);
 
@@ -50,12 +56,14 @@ for (const x of [
   ["Kulol Aziz", "artisan", ["Rishtonda kulolman, ikki soat, 170 ming so'm, 6 kishi"]], ["Kulol Baxrom", "artisan", ["Rishtonda kulolman, ikki soat, 200 ming so'm, 6 kishi"]], ["Kulol Dilshod", "artisan", ["Rishtonda kulolman, ikki soat, 230 ming so'm, 6 kishi"]],
 ]) more.push(await offer(...x));
 for (const h of [rustam, more[0], more[1]]) await admin.verifyHost(h.id, true);
+await core.setContact(rustam.key, { phone: "+998 90 000 00 00" });
+for (const l of rustam.listings) await core.updateListing(rustam.key, l.id, { address: "Namuna ko‘chasi 1, Rishton", point: { lat: 40.3567, lng: 71.2834 } });
 for (const plan of ["pro", "business"]) await payments.startPlan(rustam.key, plan, "test");
 
 const names = ["Li Wei", "Emma", "Kim", "Anna", "Yuki", "Omar", "Paul"], langs = ["zh", "de", "ko", "en", "ja", "ar", "fr"], channel = ["web", "hotel", "ai"], out = { key: rustam.key, host: rustam.id, a: rustam.listings[0].id, b: rustam.listings[1].id, adminKey };
 for (let i = 0; i < 26; i++) {
   const l = rustam.listings[i % 4 === 3 ? 1 : 0];
-  const x = await core.book({ listing_id: l.id, date: day(1 + (i % 12)), time: i % 2 ? "10:00" : "15:00", guests: 1 + (i % 3), guest_name: names[i % 7], lang: langs[i % 7], hotel_code: channel[i % 3] === "hotel" ? "vodiy" : undefined, source: channel[i % 3] === "ai" ? "ai" : undefined });
+  const x = await core.book({ listing_id: l.id, date: day(1 + (i % 12)), time: i % 2 ? "10:00" : "15:00", guests: 1 + (i % 3), guest_name: names[i % 7], email: `mehmon${i % 9}@example.com`, phone: "+998900000001", lang: langs[i % 7], hotel_code: channel[i % 3] === "hotel" ? "vodiy" : undefined, source: channel[i % 3] === "ai" ? "ai" : undefined });
   await payments.startBooking(x.token, "test");
   if (i < 24) await core.decide(rustam.key, await core.bookingId(x.token), true);
   await db.run("UPDATE bookings SET created_at=?, asked_at = CASE WHEN decided_at IS NULL THEN asked_at ELSE decided_at - interval '2 hours' END WHERE token=?", new Date(Date.now() - ((i * 7) % 29) * DAY - 3600e3).toISOString(), x.token);
@@ -66,6 +74,12 @@ for (let i = 0; i < 26; i++) {
     await db.run("UPDATE bookings SET date=?, checked_in_at=now() - interval '1 day' WHERE token=?", day(-i), x.token);
     if (i < 7) await core.review(x.token, { rating: i === 4 ? 4 : 5 });
   }
+}
+for (const [i, o] of more.entries()) for (let k = 0; k < 3; k++) { // the other providers had visitors too
+  const x = await core.book({ listing_id: o.listings[0].id, date: day(8 + k), time: "15:00", guests: 2, guest_name: names[(i + k) % 7], email: `mehmon${10 + i * 3 + k}@example.com`, lang: langs[(i + k) % 7] });
+  await payments.startBooking(x.token, "test");
+  await core.decide(o.key, await core.bookingId(x.token), true);
+  await db.run("UPDATE bookings SET date=?, created_at=?, checked_in_at=now() - interval '1 day' WHERE token=?", day(-2 - k - i), new Date(Date.now() - (6 + k * 17 + i * 5) * DAY).toISOString(), x.token);
 }
 await db.run("UPDATE bookings SET date=?, time='23:30' WHERE token=?", day(0), out.today);
 out.code = (await core.guestBooking(out.today)).ticket.code;
@@ -82,6 +96,8 @@ for (const [region, category, n, lang] of [["surxondaryo", "wood", 6, "ko"], ["n
 await db.run("UPDATE searches SET demo=true");
 await core.report(more[4].listings[0].id, { reason: "false", details: "Namuna shikoyat" });
 
+await new Promise((r) => setTimeout(r, 1500)); // let the last notifications be written
+await db.run("DELETE FROM emails"); // only what happens during the demo is worth showing
 if (process.env.DEMO_OUT) writeFileSync(process.env.DEMO_OUT, JSON.stringify(out));
 app.server.listen(port, process.env.HOST || "127.0.0.1", () => console.log(`
 Namoyish tayyor (barcha ma'lumot namuna, pul yechilmaydi):

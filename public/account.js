@@ -59,6 +59,12 @@ export function keyCard(key, name, done) {
 const when = (iso) => new Intl.DateTimeFormat("uz", { timeZone: "Asia/Tashkent", day: "numeric", month: "long", hour: "2-digit", minute: "2-digit" }).format(new Date(iso));
 const card = (title, ...kids) => el("section.card", {}, el("h2", {}, title), ...kids);
 
+function contact(a, cfg, load) {
+  const phone = el("input", { type: "tel", maxlength: 24, autocomplete: "tel", value: a.phone ?? "", placeholder: "+998 90 123 45 67" }), email = el("input", { type: "email", maxlength: 120, autocomplete: "email", value: a.email ?? "" });
+  return el("div.stack", {}, el("label", {}, "Telefon (faqat tasdiqlangan mehmonga ko‘rinadi)", phone), el("div", {}, el("button", { onclick: act(async () => { await api("/api/host/contact", { phone: phone.value }); toast("Saqlandi"); await load(); }) }, "Telefonni saqlash")),
+    cfg.mail && [el("label", {}, "Email (bron xabarlari va kirish havolasi uchun)", email), el("div", {}, el("button", { onclick: act(async () => { await api("/api/host/email", { email: email.value }); toast(email.value.trim() ? "Tasdiqlash havolasi emailingizga yuborildi" : "Email olib tashlandi"); await load(); }) }, "Emailni saqlash"))]);
+}
+
 /** The settings tab. Loads its own data. */
 export function account({ home, cfg, planName, onKey, signOut, redraw }) {
   const box = el("div.stack", { style: "gap:22px" }, el("p.muted", { role: "status" }, "Yuklanmoqda…"));
@@ -77,6 +83,7 @@ export function account({ home, cfg, planName, onKey, signOut, redraw }) {
               el("button.danger", { onclick: act(async () => { if (!(await ask("Barcha qurilmalar chiqariladi, eski zaxira havola va taqvim havolasi ishlamay qoladi. Davom etasizmi?", "Davom etish", "Yo‘q"))) return; onKey((await api("/api/auth/rotate", {})).key); await load(); }) }, "Hammasidan chiqish va yangi havola"))),
           card("Taqvim", el("p", {}, "Bronlarni Google, Apple yoki Outlook taqvimida ko‘ring. Havola maxfiy; yangisi eskisini bekor qiladi."), el("button", { onclick: act(async () => { if (a.calendar && !(await ask("Yangi havola eskisini bekor qiladi. Davom etasizmi?", "Davom etish", "Yo‘q"))) return; const { url } = await api("/api/host/calendar-link", {}); toast((await copy(url)) ? "Taqvim havolasi nusxalandi" : url); a.calendar = true; }) }, icon("calendar", 20), a.calendar ? "Yangi taqvim havolasi" : "Taqvim havolasini olish"))),
         el("div.stack", { style: "gap:22px" },
+          card("Aloqa", contact(a, cfg, load)),
           card("Pulingiz", el("dl.sum", {}, [["To‘lashga tayyor", money.available], ["Kelgusi tashriflar", money.upcoming], ["To‘langan", money.paid_out]].map(([k, v], i) => [el("dt" + (i ? "" : ".all"), {}, k), el("dd" + (i ? "" : ".all"), {}, som(v))])),
             el("p.small.muted", {}, "Tashrif chipta bilan tasdiqlangach yoki 24 soat o‘tgach pul tayyor bo‘ladi. O‘tkazmani ma’muriyat bank orqali qiladi."), cfg.testPayments && el("div.note.warn", {}, "Sinov rejimi: bu haqiqiy pul emas."),
             money.payouts.length > 0 && list(money.payouts.map((p) => [el("span", {}, som(p.amount_uzs)), el("span.small.muted", {}, `${when(p.created_at)} · ${p.reference}`)]))),

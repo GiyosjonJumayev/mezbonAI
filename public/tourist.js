@@ -13,7 +13,11 @@ try { cfg = await api("/api/config"); } catch (e) {
 let lang = [query().get("lang"), store.get("lang"), ...(navigator.languages ?? []).map((l) => l.slice(0, 2))].find((l) => cfg.langs.includes(l)) ?? "en";
 let poll, renderId = 0, watch;
 const t = (k) => cfg.ui[k][lang];
-const money = (n) => uzs(n, lang, cfg.usdRate);
+// Prices also in the visitor's own money; the first visit guesses it from the language.
+const GUESS = { en: "USD", ru: "RUB", zh: "CNY", ko: "KRW", ja: "JPY", tr: "TRY", ar: "SAR", de: "EUR", fr: "EUR" };
+const rates = cfg.fx?.rates ?? {};
+const fx = () => { const c = store.get("fx") ?? GUESS[lang] ?? "UZS"; return rates[c] ? { code: c, rate: rates[c] } : null; };
+const money = (n) => uzs(n, lang, fx());
 const why = (e) => (cfg.ui[`e_${e.code}`] ?? cfg.ui.e_other)[lang];
 const run = (fn) => act(fn, why);
 const regionName = (r) => cfg.regionNames[r][lang];
@@ -140,6 +144,7 @@ async function detail(id, lid) {
   const days = open.filter((d) => d.times.some((x) => x.free > 0));
   let day = days[0], slot = day?.times.find((x) => x.free > 0), guests = Math.min(2, slot?.free ?? 1);
   const name = el("input", { maxlength: 80, autocomplete: "name", required: true, value: store.get("name") ?? "" });
+  const contact = contactFields();
   const dayRow = el("div.days", { role: "radiogroup", "aria-label": t("date") }), timeRow = el("div.times", { role: "radiogroup", "aria-label": t("time") });
   const out = el("output"), total = el("dd.all"), count = el("dt.all"), hostGets = el("dd");
   const less = el("button", { type: "button", "aria-label": t("fewer"), onclick: () => { guests--; draw(); } }, "−"), more = el("button", { type: "button", "aria-label": t("more"), onclick: () => { guests++; draw(); } }, "+");
@@ -170,7 +175,7 @@ async function detail(id, lid) {
     submit.disabled = true;
     try {
       store.set("name", name.value.trim());
-      const b = await api("/api/bookings", { listing_id: l.id, date: day.date, time: slot.time, guests, guest_name: name.value, lang, hotel_code: hotel?.code });
+      const b = await api("/api/bookings", { listing_id: l.id, date: day.date, time: slot.time, guests, guest_name: name.value, ...contact.value(), lang, hotel_code: hotel?.code });
       store.set("bookings", JSON.stringify([b.token, ...store.json("bookings", [])].slice(0, 30)));
       go({ b: b.token });
     } catch (err) {
@@ -181,7 +186,7 @@ async function detail(id, lid) {
   } },
   el("div.row.between", {}, el("span.price.big", {}, money(l.price_uzs), " ", el("small", {}, t("perPerson"))), rating(l)),
   days.length ? [el("div.stack", { style: "gap:6px" }, el("span.small.muted", {}, t("date")), dayRow), el("div.stack", { style: "gap:6px" }, el("span.small.muted", {}, t("time")), timeRow),
-    el("div.stack", { style: "gap:6px" }, el("span.small.muted", {}, t("guests")), el("div.stepper", {}, less, out, more)), el("label", {}, t("name"), name), el("dl.sum", {}, count, total), submit, el("p.small.muted.row", {}, icon("check", 18), t("freeCancel"))]
+    el("div.stack", { style: "gap:6px" }, el("span.small.muted", {}, t("guests")), el("div.stepper", {}, less, out, more)), el("label", {}, t("name"), name), contact.node, el("dl.sum", {}, count, total), fx() && el("p.small.muted", {}, t("rateNote")), submit, el("p.small.muted.row", {}, icon("check", 18), t("freeCancel"))]
     : el("p.note.warn", {}, t("noSlots")));
   if (days.length) draw();
 
@@ -211,6 +216,15 @@ async function detail(id, lid) {
   }
   const rest = (await api("/api/listings?log=0").catch(() => [])).filter((x) => x.id !== l.id).map((x) => [x, (x.category === l.category) * 2 + (x.region === l.region)]).filter(([, s]) => s).sort((a, b) => b[1] - a[1]).slice(0, 4);
   if (id === renderId && rest.length) similar.replaceChildren(el("h2", {}, t("similar")), el("div.grid", {}, rest.map(([x]) => card(x))));
+}
+
+/** Remembered on this device only. */
+function contactFields() {
+  const email = el("input", { type: "email", maxlength: 120, autocomplete: "email", value: store.get("email") ?? "" }), phone = el("input", { type: "tel", maxlength: 24, autocomplete: "tel", value: store.get("phone") ?? "" });
+  return {
+    node: [el("div.fields", {}, cfg.mail && el("label", {}, t("email"), email), el("label", {}, t("phone"), phone)), el("p.small.muted", {}, t("contactWhy"))],
+    value() { store.set("email", email.value.trim() || null); store.set("phone", phone.value.trim() || null); return { email: (cfg.mail && email.value.trim()) || null, phone: phone.value.trim() || null }; },
+  };
 }
 
 function reportForm(l) {
@@ -262,6 +276,28 @@ async function ticketPage(id, token) {
   page(el("div.noprint", {}, link({ b: token }, "a.back", {}, b.i18n[lang].title)), el("section.card.ticket.sheet", {}, el("p.muted", {}, "SilkRoad Experience OS"), el("h1", {}, b.i18n[lang].title), ticketQr(b.ticket.code), el("b.code", { dir: "ltr" }, ticketText(b.ticket.code)),
     el("dl.facts", {}, [[t("date"), longDate(b.date)], [t("time"), b.time], [t("guests"), String(b.guests)], [t("name"), b.guest_name], [t("where"), placeOf(b)]].map(([k, v]) => el("div", {}, el("dt", {}, k), el("dd", {}, v)))),
     b.ticket.used_at ? el("div.note.ok", {}, t("ticketUsed")) : el("p.muted", {}, t("ticketHint"))), el("button.primary.noprint", { style: "justify-self:center", onclick: () => print() }, t("printTicket")));
+}
+
+function meetCard(b) {
+  const m = b.meet;
+  if (!m) return el("section.card", {}, el("div.row", {}, icon("pin", 24), el("h2", {}, t("meet"))), el("p.muted", {}, t("meetAfter")));
+  const at = m.lat == null ? null : `${m.lat},${m.lng}`;
+  return el("section.card", {}, el("div.row", {}, icon("pin", 24), el("h2", {}, t("meet"))), m.address ? el("p", { dir: "auto" }, m.address) : !at && el("p.muted", {}, t("meetAsk")),
+    el("div.row", {}, (at || m.address) && el("a.btn.primary", { href: `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(at ?? `${m.address}, ${cfg.regions[b.region]}, Uzbekistan`)}`, target: "_blank", rel: "noopener noreferrer" }, t("openMap")),
+      at && el("a.btn", { href: `https://yandex.com/maps/?pt=${m.lng},${m.lat}&z=16&l=map`, target: "_blank", rel: "noopener noreferrer" }, "Yandex"), m.phone && el("a.btn", { href: `tel:${m.phone}`, dir: "ltr" }, m.phone)));
+}
+
+/** A printable confirmation of what was paid and what came back. */
+async function receiptPage(id, token) {
+  const b = await api(`/api/bookings/${encodeURIComponent(token)}`), p = b.payment;
+  if (id !== renderId) return;
+  if (!p?.paid_at) return go({ b: token });
+  const when = (iso) => new Intl.DateTimeFormat(lang, { timeZone: "Asia/Tashkent", dateStyle: "long", timeStyle: "short" }).format(new Date(iso)), real = (n) => uzs(n, lang, null);
+  page(el("div.noprint", {}, link({ b: token }, "a.back", {}, b.i18n[lang].title)), el("section.card.ticket.sheet", {}, el("p.muted", {}, "SilkRoad Experience OS"), el("h1", {}, t("receipt")), el("h2", {}, b.i18n[lang].title),
+    el("dl.facts", {}, [[t("date"), `${longDate(b.date)}, ${b.time}`], [t("guests"), String(b.guests)], [t("name"), b.guest_name], [t("where"), placeOf(b)], [t("payBy"), p.provider === "test" ? t("pay") : PAY_NAME[p.provider] ?? p.provider], [t("paidOn"), when(p.paid_at)], [t("receiptNo"), p.id]].map(([k, v]) => el("div", {}, el("dt", {}, k), el("dd", { dir: "auto" }, v)))),
+    el("dl.sum.wide", {}, [[t("toHost"), b.host_uzs], ...(b.hotel ? [[b.hotel, b.hotel_uzs]] : []), ["SilkRoad", b.platform_uzs]].map(([k, v]) => [el("dt", {}, k), el("dd", {}, real(v))]), el("dt.all", {}, t("total")), el("dd.all", {}, real(p.amount_uzs))),
+    ["refund_due", "refunded"].includes(p.status) && el("div.note" + (p.status === "refunded" ? ".ok" : ""), {}, t(p.status === "refunded" ? "refunded" : "refundDue"), p.refunded_at && `, ${when(p.refunded_at)}`),
+    el("p.small.muted", {}, t("receiptNote"))), el("button.primary.noprint", { style: "justify-self:center", onclick: () => print() }, t("print")));
 }
 
 /** Pick another open slot for an existing booking. */
@@ -321,6 +357,7 @@ async function bookingView(id, token) {
         }) }, PAY_NAME[method] ? [icon("wallet", 20), PAY_NAME[method]] : t("pay"))), cfg.payMethods.some((m) => PAY_NAME[m]) && el("p.small.muted.row", {}, icon("shield", 18), t("paySafe"))),
         el("div.row", {},
           chatOpen && el("a.btn", { href: `/api/bookings/${b.token}/calendar.ics` }, icon("calendar", 20), t("calendar")),
+          b.payment?.paid_at && link({ b: b.token, receipt: 1 }, "a.btn", {}, icon("wallet", 20), t("receipt")),
           el("button", { onclick: async () => { if (await copy(`${location.origin}/?b=${b.token}`)) toast(t("copied")); } }, t("copyLink")),
           b.can_move && el("button", { onclick: run(async (e) => { const c = e.currentTarget.closest(".card"); app.querySelector(".movebox")?.remove(); c.after(await moveForm(b, () => load(true))); app.querySelector(".movebox")?.scrollIntoView({ block: "nearest" }); }) }, t("move")),
           b.can_cancel && el("button.danger", { onclick: run(async () => { if (!(await ask(t("cancelSure"), t("yes"), t("no")))) return; await api(`/api/bookings/${b.token}/cancel`, {}); await load(true); }) }, t("cancel"))),
@@ -330,6 +367,7 @@ async function bookingView(id, token) {
         notifyCard(b),
         b.can_review && reviewForm(b, () => load(true)),
         b.my_rating && el("div.card", {}, el("p", {}, el("span.star", {}, "★".repeat(b.my_rating)), " ", t("thanks"))),
+        ["paid", "confirmed"].includes(b.status) && meetCard(b),
         chatOpen && el("section.card", {}, el("h2", {}, t("ask")),
           b.messages.length > 0 && el("div.chat", { role: "log" }, b.messages.map((m) => { const mine = m.sender === "guest"; return el("div.msg" + (mine ? ".me" : ""), { dir: "auto" }, mine ? m.original : m.translated,
             !mine && m.engine === "untranslated" ? el("small", {}, t("untranslated")) : !mine && m.original !== m.translated && el("small", {}, m.original)); })),
@@ -352,7 +390,12 @@ async function mine(id) {
   page(el("h1", {}, t("myBookings")), trips.length > 0 && el("div.grid", {}, trips.map((x) => link({ trip: x.token }, "a.card.triplink", {}, icon("route", 26), el("b", {}, t("tripMine")), el("span.muted.small", {}, `${longDate(x.bookings[0].date)} · ${x.bookings.length} × ${t("ticket")}`), x.waiting > 0 && el("span.badge.warn", {}, `${x.waiting} ${t("tripLeft")}`)))), found.length
     ? el("div.grid", {}, found.map((b) => el("article.tile-l", {}, link({ b: b.token }, "a", {}, el("div.art", {}, visual({ ...b, id: b.listing_id }), el("span.badge" + ({ confirmed: ".ok", pending: ".warn", declined: ".bad", expired: ".bad", cancelled: ".bad" }[b.status] ?? ""), {}, t(b.status))),
       el("div.stack", { style: "gap:4px" }, el("h2.sm", {}, b.i18n[lang].title), el("div.meta", {}, `${longDate(b.date)}, ${b.time}`), el("span.price", {}, money(b.total_uzs)))))))
-    : el("div.card.empty", {}, plate("bron", "bread"), el("p", {}, t("noBookings")), link({}, "a.btn.primary", {}, t("explore"))));
+    : el("div.card.empty", {}, plate("bron", "bread"), el("p", {}, t("noBookings")), link({}, "a.btn.primary", {}, t("explore"))), cfg.mail && findForm());
+}
+function findForm() {
+  const email = el("input", { type: "email", required: true, maxlength: 120, autocomplete: "email", value: store.get("email") ?? "" });
+  const send = run(async () => { await api("/api/find", { email: email.value, lang }); toast(t("findSent")); });
+  return el("form.card", { style: "max-width:560px", onsubmit: (e) => { e.preventDefault(); send({ currentTarget: e.submitter }); } }, el("h2", {}, t("findTitle")), el("p.muted", {}, t("findText")), el("label", {}, t("email"), email), el("button", { type: "submit" }, t("send")));
 }
 async function saved(id) {
   const all = (await api("/api/listings?log=0")).filter((l) => isFav(l.id));
@@ -370,10 +413,11 @@ function chrome(q) {
   document.getElementById("bottom").replaceChildren(...build(23));
   document.getElementById("skip").textContent = t("skip");
   document.getElementById("foot").textContent = cfg.testPayments ? `${t("tagline")} ${t("testNote")}` : t("tagline");
-  document.getElementById("prefs").replaceChildren(installButton(t("install")), themePicker({ theme: t("theme"), auto: t("auto"), light: t("light"), dark: t("dark") }), el("a.back", { href: "/panel" }, "Talab paneli"));
+  const cur = Object.keys(rates).length > 0 && el("select", { "aria-label": t("currency"), title: t("rateNote"), onchange: () => { store.set("fx", cur.value); render(); } }, ["UZS", ...Object.keys(rates)].map((c) => el("option", { value: c, selected: c === (fx()?.code ?? "UZS") }, c)));
+  document.getElementById("prefs").replaceChildren(...[cur].filter(Boolean), installButton(t("install")), themePicker({ theme: t("theme"), auto: t("auto"), light: t("light"), dark: t("dark") }), el("a.back", { href: `/impact?lang=${["uz", "ru"].includes(lang) ? lang : "en"}` }, t("impact")), el("a.back", { href: "/panel" }, "Talab paneli"));
 }
 
-const tripCtx = () => ({ t, cfg, lang, run, why, money, longDate, regionName, placeOf, link, page, back, go, hotel, addDays, today, copy, alive: (id) => id === renderId, every: (fn, ms) => { poll = setInterval(() => { if (!document.hidden) fn().catch(() => {}); }, ms); } });
+const tripCtx = () => ({ t, cfg, lang, run, why, money, longDate, regionName, placeOf, link, page, back, go, hotel, contactFields, addDays, today, copy, alive: (id) => id === renderId, every: (fn, ms) => { poll = setInterval(() => { if (!document.hidden) fn().catch(() => {}); }, ms); } });
 
 async function render() {
   const id = ++renderId;
@@ -387,7 +431,8 @@ async function render() {
   const q = query();
   chrome(q);
   try {
-    if (q.get("b") && q.has("ticket")) await ticketPage(id, q.get("b"));
+    if (q.get("b") && q.has("receipt")) await receiptPage(id, q.get("b"));
+    else if (q.get("b") && q.has("ticket")) await ticketPage(id, q.get("b"));
     else if (q.get("b")) await bookingView(id, q.get("b"));
     else if (q.get("trip")) await tripPage(tripCtx(), id, q.get("trip"));
     else if (q.has("plan")) planner(tripCtx(), id);

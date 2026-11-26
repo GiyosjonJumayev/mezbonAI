@@ -1,4 +1,4 @@
-# SilkRoad Experience OS 5.0
+# SilkRoad Experience OS 6.0
 
 **AI-powered Tourism Business Operating System**
 
@@ -20,7 +20,18 @@ Oddiy marketplace emas. Bu mahalliy turizm bizneslarini raqamlashtiradigan, ular
    - Daromad, konversiya, eng band vaqtlar, kelmaganlar, CSV.
    - Narx taqqosi, javobsiz talab, turistlar qidirgan sanalar va tillar.
 
-## 5.0 da yangi
+## 6.0 da yangi
+
+- **Click** to‘lovi: Octo va Payme yoniga uchinchi tizim, pul qaytarish bilan.
+- **Sayohat uchun bitta to‘lov**: bir mezbon qabul qila olmasa, faqat uning puli qaytadi.
+- **Manzil va telefon**: faqat tasdiqlangan mehmonga, xarita bilan.
+- **Email**: chek, tasdiq, eslatma, bronni topish, kirish havolasi.
+- **O‘z valyutasida narx**: Markaziy bank kursi bo‘yicha, to‘lov so‘mda.
+- **`/impact`**: sayyoh pulining qanchasi mahalliy oilalarga yetgani ochiq.
+- **Investor ko‘rsatkichlari**: `/admin` da, faqat haqiqiy to‘lovlardan.
+- **`npm run doctor`** va [ishga tushirish qo‘llanmasi](LAUNCH.md).
+
+## 5.0 da
 
 - **PostgreSQL**: pul va joyni himoya qiladigan qoidalar bazaning o‘zida ham tekshiriladi.
 - **Haqiqiy to‘lov**: Octo (Visa, Mastercard, Uzcard, Humo) va Payme, pul qaytarish, obuna, o‘tkazmalar hisobi.
@@ -90,14 +101,13 @@ Demo oldidan Claude kaliti bilan vaqtni o‘lchang. “60 soniya”ni faqat o‘
 
 ## Tashqi dunyodan nima kerak
 
-- **To‘lov shartnomasi**: Octo va Payme ularning hujjatlari bo‘yicha yozilgan va mahalliy sinov serverida tekshirilgan, haqiqiy xizmatda hali emas. Shartnoma, kalitlar va ularning qabul sinovi kerak. Click ulanmagan.
+- **To‘lov shartnomasi**: Octo va Payme ularning hujjatlari bo‘yicha yozilgan va mahalliy sinov serverida tekshirilgan, haqiqiy xizmatda hali emas. Click ham shunday. Shartnoma, kalitlar va ularning qabul sinovi kerak.
 - **Docker va Caddy** ishlab chiquvchi kompyuterida ishga tushirib ko‘rilmagan, GitHub CI konteynerni ishga tushiradi.
 - **Claude** haqiqiy API bilan hali sinalmagan. Kalitsiz yordamchi va sayohat rejasi faqat tayyor iboralarni tushunadi.
-- **Push va Telegram** sinov jo‘natuvchi bilan tekshirilgan. HTTPS va bot tokeni kerak.
+- **Push, email va Telegram** sinov jo‘natuvchi bilan tekshirilgan. HTTPS va bot tokeni kerak.
 - **Rasmlar** avtomatik naqsh, haqiqiysini mezbon yuklaydi.
 - **Nutqni tanish** brauzerniki (Chrome, internet kerak). Ovoz brauzer ishlab chiqaruvchisiga yuboriladi.
 - **Tarjimalar**ni til egalari tekshirmagan.
 - **“Tekshirilgan” belgisi va gid sertifikati** ma’mur hujjatni haqiqatan ko‘rishiga bog‘liq, reyestr bilan aloqa yo‘q.
-- **Sayohatda har bir bron alohida to‘lanadi**, chunki har bir mezbonga alohida to‘lanadi va qaytariladi.
 - **Tunash** broni yo‘q. **GetYourGuide, Viator, Klook** ulanmagan, faqat `/feeds/products.json` bor.
 - **Qonun**: shartnoma, soliq, fiskal chek va shaxsiy ma’lumotni O‘zbekistonda saqlash bo‘yicha yurist maslahati kerak.

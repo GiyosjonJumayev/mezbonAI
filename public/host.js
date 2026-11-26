@@ -56,7 +56,13 @@ function welcome() {
       try { const h = await api("/api/hosts", { name: name.value, type: type.value }); freshKey = h.key; if (!location.hash) location.hash = "yangi"; await start(); } catch (err) { toast(err.message, true); btn.disabled = false; }
     } }, el("h2", {}, "Kabinet ochish"), el("label", {}, "Ismingiz yoki biznes nomi", name), el("label", {}, "Faoliyatingiz", type), btn, el("p.small.muted.or", {}, "Avval ochganmisiz?"),
       passkeys() && el("button", { type: "button", onclick: act(async () => { await passkeyLogin(); await start(); }) }, icon("key", 20), "Passkey bilan kirish"),
+      cfg.mail && mailLogin(),
       el("p.small.muted", {}, "Yoki zaxira kirish havolangizni shu qurilmada oching. Telegram botdan kirish havolasi: /kirish"))));
+}
+
+function mailLogin() {
+  const email = el("input", { type: "email", maxlength: 120, autocomplete: "email", "aria-label": "Email", placeholder: "Email" });
+  return el("div.compose", {}, email, el("button", { type: "button", onclick: act(async () => { await api("/api/auth/email", { email: email.value }); toast("Email kabinetga ulangan bo‘lsa, kirish havolasi yuborildi"); }) }, "Havola yuborish"));
 }
 
 // ---- new listing ----------------------------------------------------------------------------
@@ -128,12 +134,21 @@ function editor(l) {
   category.value = l.category;
   certLabel.hidden = l.category !== "tour";
   const place = el("input", { maxlength: 60, value: l.place ?? "", oninput: touch });
+  const address = el("input", { maxlength: 200, value: l.address ?? "", oninput: touch, placeholder: "Masalan: Kulollar ko‘chasi 12, Rishton" });
+  let point = l.lat == null ? null : { lat: l.lat, lng: l.lng };
+  const pointText = el("span.small.muted", { role: "status" }), showPoint = () => { pointText.textContent = point ? `Nuqta belgilangan: ${point.lat.toFixed(4)}, ${point.lng.toFixed(4)}` : "Xaritada nuqta belgilanmagan"; };
+  const locate = el("button", { type: "button", onclick: act(() => new Promise((done, fail) => {
+    if (!navigator.geolocation) return fail(new Error("Bu qurilma joylashuvni bilmaydi"));
+    navigator.geolocation.getCurrentPosition((p) => { point = { lat: p.coords.latitude, lng: p.coords.longitude }; touch(); showPoint(); done(); }, () => fail(new Error("Joylashuvga ruxsat berilmadi")), { enableHighAccuracy: true, timeout: 15000 });
+  })) }, icon("pin", 20), "Hozir turgan joyim");
+  showPoint();
   const times = el("input", { value: l.times.join(", "), oninput: touch });
   const days = new Set(l.weekdays), closed = new Set(l.closed.filter((d) => d >= today()));
   const form = el("form.fields", { onsubmit: (e) => e.preventDefault() },
     el("label", {}, "Mashg‘ulot", category), el("label", {}, "Viloyat", region), el("label", {}, "Joy", place),
     num("price_uzs", "Narx, so‘m / kishi"), num("duration_min", "Davomiyligi, daqiqa"), num("capacity", "Mehmonlar, kishi"),
     el("label", {}, "Boshlanish vaqtlari", times), certLabel);
+  const meeting = el("div.stack", { style: "gap:8px" }, el("label", {}, "Aniq manzil (faqat tasdiqlangan mehmonga ko‘rinadi)", address), el("div.row", {}, locate, point && el("button.ghost", { type: "button", onclick: (e) => { point = null; touch(); showPoint(); e.currentTarget.remove(); } }, "Nuqtani olib tashlash"), pointText));
   const dayOff = el("input", { type: "date", min: today(), "aria-label": "Dam olish kuni" });
   const closedList = el("div.chips");
   const drawClosed = () => closedList.replaceChildren(...[...closed].sort().map((d) => el("button", { type: "button", "aria-label": `${uzDate(d)} kunini ochish`, onclick: () => { closed.delete(d); touch(); drawClosed(); } }, `${uzDate(d)} ×`)));
@@ -156,7 +171,7 @@ function editor(l) {
 
   async function save() {
     keep();
-    const p = { category: category.value, place: place.value, weekdays: [...days], closed: [...closed], times: times.value.split(/[,;\s]+/).filter(Boolean) };
+    const p = { category: category.value, place: place.value, address: address.value, point, weekdays: [...days], closed: [...closed], times: times.value.split(/[,;\s]+/).filter(Boolean) };
     if (region.value) p.region = region.value;
     if (category.value === "tour") p.cert_no = cert.value;
     for (const f of ["price_uzs", "duration_min", "capacity"]) { const v = form.elements[f].value; if (v !== "") p[f] = Number(v); }
@@ -186,7 +201,7 @@ function editor(l) {
     el("div.row.between", {}, el("a", { href: "#takliflar" }, "Takliflarimga qaytish"), el("div.row", {}, el("span.badge" + STATE[l.status][1], {}, STATE[l.status][0]), el("span.badge" + (l.engine === "claude" ? ".ok" : ".warn"), {}, l.engine === "claude" ? "Claude AI matni" : "Shablon matn"))),
     need.size > 0 && el("div.note.warn", { role: "status" }, "E’lon qilish uchun: ", l.missing.map((m) => m.text).join(" ")),
     el("div.two", {},
-      el("div.card", {}, el("h2", {}, "Ma’lumotlar"), form,
+      el("div.card", {}, el("h2", {}, "Ma’lumotlar"), form, meeting,
         el("div.stack", { style: "gap:6px" }, el("span.small.muted", {}, "Ish kunlari"), el("div.chips", { role: "group", "aria-label": "Ish kunlari" }, DAYS.map((d, i) => el("button", { type: "button", "aria-pressed": String(days.has(i + 1)), onclick: (e) => { touch(); days.has(i + 1) ? days.delete(i + 1) : days.add(i + 1); e.currentTarget.setAttribute("aria-pressed", String(days.has(i + 1))); } }, d)))),
         el("div.stack", { style: "gap:6px" }, el("span.small.muted", {}, "Dam olish kunlari (bron qabul qilinmaydi)"), el("div.compose", {}, dayOff, el("button", { type: "button", onclick: () => { if (!dayOff.value) return toast("Avval sanani tanlang", true); closed.add(dayOff.value); dayOff.value = ""; touch(); drawClosed(); } }, "Qo‘shish")), closedList)),
       el("div.card", {}, el("h2", {}, "Mehmon nimani ko‘radi"), photos, chips, el("label", {}, "Sarlavha", title), el("label", {}, "Tavsif", desc))),
@@ -211,7 +226,7 @@ function bookingCard(b) {
   const guestMsg = b.messages.findLast((m) => m.sender === "guest");
   const decide = (what) => act(async () => { home = await api(`/api/host/bookings/${b.id}/${what}`, {}); draw(); });
   return el("div.card", {}, el("div.row.between", {}, el("h2.sm", {}, b.title), el("span.badge" + tone, {}, label)),
-    el("dl.facts", {}, [["Mehmon", `${b.guest_name}, ${b.guests} kishi`], ["Vaqt", `${uzDate(b.date)}, ${b.time}`], ["Sizga", som(b.host_uzs)], ["Tili va kanali", `${cfg.langNames[b.lang]}, ${CHANNEL[b.channel]}`]].map(([k, v]) => el("div", {}, el("dt", {}, k), el("dd", {}, v)))),
+    el("dl.facts", {}, [["Mehmon", `${b.guest_name}, ${b.guests} kishi`], ...(b.guest_phone ? [["Telefon", el("a", { href: `tel:${b.guest_phone}` }, b.guest_phone)]] : []), ["Vaqt", `${uzDate(b.date)}, ${b.time}`], ["Sizga", som(b.host_uzs)], ["Tili va kanali", `${cfg.langNames[b.lang]}, ${CHANNEL[b.channel]}`]].map(([k, v]) => el("div", {}, el("dt", {}, k), el("dd", {}, v)))),
     b.checked_in_at && el("div.note.ok", {}, "Mehmon chipta bilan keldi"),
     b.moved_at && b.status === "paid" && el("div.note.warn", {}, "Mehmon vaqtni o‘zgartirdi. Yangi vaqtni tasdiqlang"),
     b.status === "paid" && b.decide_by && el("p.small.muted", {}, `Javob muddati: ${new Intl.DateTimeFormat("uz", { timeZone: "Asia/Tashkent", day: "numeric", month: "long", hour: "2-digit", minute: "2-digit" }).format(new Date(b.decide_by))}. Javob berilmasa, bron rad etiladi va pul mehmonga qaytadi.`),
@@ -277,7 +292,7 @@ async function reload() { home = await api("/api/host"); }
 
 let here = location.hash;
 addEventListener("hashchange", async () => {
-  if (location.hash.startsWith("#kirish=")) return open().catch((e) => { if (e.status === 401) welcome(); else toast(e.message, true); });
+  if (location.hash.startsWith("#kirish=") || location.hash.startsWith("#email=")) return open().catch((e) => { if (e.status === 401) welcome(); else toast(e.message, true); });
   if (!home || location.hash === here) return;
   if (dirty && !(await ask("Saqlanmagan o‘zgarishlar bor. Chiqasizmi?", "Saqlamay chiqish", "Qolish"))) { history.replaceState(null, "", here || "/mezbon"); return; }
   dirty = false;
@@ -311,6 +326,11 @@ async function start() {
 }
 
 async function open() {
+  const mail = /^#email=(e_[\w-]{32})$/.exec(location.hash)?.[1];
+  if (mail) {
+    history.replaceState(null, "", "/mezbon");
+    try { await api("/api/auth/email-confirm", { token: mail }); toast("Email tasdiqlandi"); } catch (e) { toast(e.status === 401 ? "Havola eskirgan yoki ishlatilgan" : e.message, true); }
+  }
   if (location.hash.startsWith("#kirish=")) await reload().catch((e) => { if (e.status !== 401) throw e; });
   if (await enter(home?.name)) { forget(); freshKey = null; }
   await start();
