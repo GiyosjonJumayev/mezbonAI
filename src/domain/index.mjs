@@ -10,6 +10,7 @@ import { createMetrics } from "./metrics.mjs";
 import { createPartners } from "./partners.mjs";
 import { createPlans } from "./plans.mjs";
 import { createStage } from "./stage.mjs";
+import { createWaitlist } from "./waitlist.mjs";
 import { createTrips } from "./trips.mjs";
 import { createPayments } from "../payments/payments.mjs";
 
@@ -31,22 +32,24 @@ export function createDomain({ db, config, fetchFn = fetch }) {
 
   const accounts = createAccounts({ db, audit, site: config });
   const plans = createPlans({ db, accounts });
-  const catalog = createCatalog({ db, accounts, plans });
-  const availability = createAvailability({ db, catalog });
+  const catalog = createCatalog({ db, accounts, plans, events });
+  const availability = createAvailability({ db, catalog, events });
   const bookings = createBookings({ db, events, accounts, catalog, availability, plans, refunds });
   payments = createPayments({ db, config, fetchFn, accounts, bookings, plans, audit });
   const trips = createTrips({ db, catalog, availability, bookings });
+  const waitlist = createWaitlist({ db, catalog, availability });
   const insights = createInsights({ db, accounts, availability, plans });
   const partners = createPartners({ db, audit }), stage = createStage({ db, accounts });
   const metrics = createMetrics({ db, config, partners });
   const admin = createAdmin({ db, accounts, payments, audit, events, config });
 
   const core = {};
-  for (const part of [accounts, plans, catalog, availability, bookings, trips, insights]) for (const [k, fn] of Object.entries(part)) {
+  for (const part of [accounts, plans, catalog, availability, bookings, trips, insights, waitlist]) for (const [k, fn] of Object.entries(part)) {
     if (k in core) throw new Error(`Two domain functions are named ${k}`);
     core[k] = typeof fn === "function" ? fn.bind(part) : fn;
   }
-  core.search = (p) => catalog.search(p, (list, date) => availability.slotsMany(list, date, 1));
+  core.search = (p) => catalog.search(p, availability.slotsMany);
+  core.nextTimes = (ids, p) => catalog.nextTimes(ids, p, availability.slotsMany);
   const helper = createAssistant({ db, core });
   for (const k of Object.keys(helper)) if (k in core) throw new Error(`Two domain functions are named ${k}`);
   Object.assign(core, helper);

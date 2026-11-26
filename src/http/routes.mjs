@@ -37,6 +37,14 @@ export function createRoutes({ core, payments, admin, metrics, partners, stage, 
       const f = { region: q.get("region"), category: q.get("category"), date: q.get("date"), guests: Number(q.get("guests")), lang: q.get("lang"), source: q.get("source") === "ai" ? "ai" : "web" };
       return core.search({ ...f, log: newSearch([ip, f.source, f.region, f.category].join("|")) });
     },
+    "GET /api/next": ({ q }) => core.nextTimes((q.get("ids") ?? "").split(","), { date: q.get("date"), guests: Number(q.get("guests")) }),
+    "POST /api/listings/:id/waitlist": ({ id, body, ip }) => {
+      if (!mail.on) throw fail(404, "Topilmadi", "notfound");
+      limitMail(ip);
+      if (typeof body.email === "string") limitAddress(`wait|${body.email.trim().toLowerCase()}`);
+      return core.joinWaitlist(id, body);
+    },
+    "POST /api/waitlist/:id/leave": ({ id }) => core.leaveWaitlist(id),
     "GET /api/listings/:id": async ({ id, q, ip }) => {
       const l = await core.listing(id);
       if (q.get("lang") && newView([ip, id].join("|"))) await core.view(id, q.get("lang")); // only the traveller site sends lang

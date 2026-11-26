@@ -63,6 +63,10 @@ export async function fillDemo({ db, core, payments, admin }) {
   out.trip = (await core.bookTrip({ items: plan.days.flatMap((d) => d.items.map((x) => ({ listing_id: x.listing_id, date: d.date, time: x.time }))), guests: 2, guest_name: "Anna", lang: "en" })).token;
   for (let i = 0; i < 90; i++) await core.view(i % 3 ? out.a : out.b, langs[i % 7]);
   for (const [region, category, n, lang] of [["surxondaryo", "wood", 6, "ko"], ["namangan", "metal", 4, "zh"], ["fargona", "pottery", 9, "de"], ["buxoro", "wood", 3, "en"]]) for (let i = 0; i < n; i++) await core.search({ region, category, lang });
+  // Prices that follow the day and the group
+  await core.updateListing(rustam.key, out.a, { pricing: { weekend: 10, group: { from: 4, pct: 10 } } });
+  await core.updateListing(more[0].key, more[0].listings[0].id, { pricing: { last: { hours: 72, pct: 20 } } });
+  await core.updateListing(more[4].key, more[4].listings[0].id, { pricing: { last: { hours: 48, pct: 15 }, group: { from: 5, pct: 12 } } });
   await db.run("UPDATE searches SET demo=true");
   await core.report(more[4].listings[0].id, { reason: "false", details: "Namuna shikoyat" });
 

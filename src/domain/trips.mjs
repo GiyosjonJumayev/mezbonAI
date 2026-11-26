@@ -4,6 +4,7 @@ import { aiEnabled, ask, errText } from "../ai/claude.mjs";
 import { extractFacts, norm } from "../ai/extract.mjs";
 import { CATEGORIES, REGIONS, REGION_NAMES } from "../lib/i18n.mjs";
 import { publicListing } from "./catalog.mjs";
+import { unitPrice } from "./pricing.mjs";
 import { addDays, bad, id, int, isDate, known, lang, notFound, secret, str, today } from "../lib/util.mjs";
 
 /** Schematic west-to-east order along the railway, so a route does not zigzag. */
@@ -79,17 +80,19 @@ export function createTrips({ db, catalog, availability, bookings }) {
         // Spread what a region offers over the days spent there, instead of a full day and then an empty one.
         const left = pool.filter((l) => l.region === order[at] && !used.has(l.id)).length, quota = Math.min(perDay, Math.ceil(left / Math.max(1, (at === order.length - 1 ? days - i : stay[at] - stayed + 1))));
         while (items.length < quota) {
-          const options = pool.filter((l) => l.region === order[at] && !used.has(l.id) && (budget == null || spent + l.price_uzs <= budget)).map((l) => {
+          const options = pool.filter((l) => l.region === order[at] && !used.has(l.id)).map((l) => {
             const t = (open.get(l.id).get(date) ?? []).find(({ time }) => items.every((x) => minutes(time) >= minutes(x.time) + x.duration_min + GAP_MIN || minutes(time) + l.duration_min + GAP_MIN <= minutes(x.time)));
-            return t && { l, time: t.time };
+            if (!t) return null;
+            const cost = unitPrice(l, date, t.time, guests);
+            return (budget == null || spent + cost.unit <= budget) && { l, time: t.time, cost };
           }).filter(Boolean).sort((a, b) => score(b.l) - score(a.l) || a.l.id.localeCompare(b.l.id));
           if (!options.length) break;
-          const { l, time } = options[0];
+          const { l, time, cost } = options[0];
           const v = publicListing(l);
-          items.push({ listing_id: v.id, time, duration_min: v.duration_min, i18n: v.i18n, category: v.category, region: v.region, place: v.place, host: v.host, verified: v.verified, demo: v.demo, photo: v.photo, rating: v.rating, reviews: v.reviews, price_uzs: v.price_uzs, more: options.length > 1 });
+          items.push({ listing_id: v.id, time, duration_min: v.duration_min, i18n: v.i18n, category: v.category, region: v.region, place: v.place, host: v.host, verified: v.verified, demo: v.demo, photo: v.photo, rating: v.rating, reviews: v.reviews, price_uzs: cost.unit, before_uzs: cost.before, more: options.length > 1 });
           used.add(l.id);
           seen.set(l.category, (seen.get(l.category) ?? 0) + 1);
-          spent += l.price_uzs;
+          spent += cost.unit;
         }
         plan.push({ date, region: order[at], items: items.sort((a, b) => a.time.localeCompare(b.time)) });
       }
@@ -106,7 +109,7 @@ export function createTrips({ db, catalog, availability, bookings }) {
         await db.run("INSERT INTO trips (id,token,guest_name,lang) VALUES (?,?,?,?)", t.id, t.token, name, lang(p.lang));
         // Always the same order, so two trips never wait for each other.
         for (const x of [...items].sort((a, b) => a.listing_id.localeCompare(b.listing_id))) {
-          try { await bookings.book({ listing_id: x.listing_id, date: x.date, time: x.time, guests, guest_name: name, lang: p.lang, email: p.email, phone: p.phone, hotel_code: p.hotel_code, trip_id: t.id }); }
+          try { await bookings.book({ listing_id: x.listing_id, date: x.date, time: x.time, expect_uzs: x.expect_uzs, guests, guest_name: name, lang: p.lang, email: p.email, phone: p.phone, hotel_code: p.hotel_code, trip_id: t.id }); }
           catch (e) { if (e.status) e.item = { listing_id: x.listing_id, date: x.date, time: x.time }; throw e; }
         }
       });

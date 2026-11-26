@@ -28,6 +28,8 @@ export function adminSessions(adminKey, totpSecret) {
 }
 
 export function createAdmin({ db, accounts, payments, audit, events, config }) {
+  /** Open pages should not keep showing what is no longer on sale. */
+  const hostChanged = async (hid) => { for (const l of await db.all("SELECT id FROM listings WHERE host_id=? AND status<>'draft'", hid)) events.emit("listing", { listing: l.id }); };
   const one = async (sql, ...p) => { const r = await db.one(sql, ...p); if (!r) throw notFound("Topilmadi"); return r; };
   return {
     async overview() {
@@ -54,16 +56,19 @@ export function createAdmin({ db, accounts, payments, audit, events, config }) {
     async verifyHost(hid, on) {
       const h = await one("UPDATE hosts SET verified_at = CASE WHEN ?::boolean THEN COALESCE(verified_at, now()) END WHERE id=? RETURNING id", Boolean(on), String(hid));
       await audit("admin", on ? "host_verified" : "host_unverified", h.id);
+      await hostChanged(h.id);
       return { ok: true };
     },
     async suspendHost(hid, on) {
       const h = await one("UPDATE hosts SET suspended_at = CASE WHEN ?::boolean THEN COALESCE(suspended_at, now()) END WHERE id=? RETURNING id", Boolean(on), String(hid));
       await audit("admin", on ? "host_suspended" : "host_restored", h.id);
+      await hostChanged(h.id);
       return { ok: true };
     },
     async blockListing(lid, on) {
       const l = await one("UPDATE listings SET status = CASE WHEN ?::boolean THEN 'blocked' ELSE 'paused' END WHERE id=? AND status <> 'draft' RETURNING id", Boolean(on), String(lid));
       await audit("admin", on ? "listing_blocked" : "listing_unblocked", l.id);
+      events.emit("listing", { listing: l.id });
       return { ok: true };
     },
     async resolveReport(rid) {

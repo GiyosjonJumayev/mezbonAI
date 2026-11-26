@@ -93,7 +93,8 @@ export function listen(path, onEvent) {
     for (let wait = 1000; !ctl.signal.aborted; wait = Math.min(wait * 2, 20000)) {
       try {
         const r = await fetch(path, { signal: ctl.signal });
-        if (r.status === 401) return;
+        if ([401, 403, 404].includes(r.status)) return;
+        if (!r.ok) throw r.status;
         const reader = r.body.pipeThrough(new TextDecoderStream()).getReader();
         for (let buf = ""; ;) {
           const { value, done } = await reader.read();
@@ -109,6 +110,38 @@ export function listen(path, onEvent) {
     }
   })();
   return () => ctl.abort();
+}
+
+/** A live stream that rests while the tab is hidden, because a browser allows only a few open connections.
+ *  onEvent({ t: "back" }) means something may have been missed. Returns a function that ends it. */
+export function subscribe(path, onEvent) {
+  let stop = null, first = true;
+  const sync = () => {
+    if (document.hidden) { stop?.(); stop = null; }
+    else if (!stop) { stop = listen(path, onEvent); if (!first) onEvent({ t: "back" }); first = false; }
+  };
+  sync();
+  document.addEventListener("visibilitychange", sync);
+  return () => { document.removeEventListener("visibilitychange", sync); stop?.(); stop = null; };
+}
+
+const calm = matchMedia("(prefers-reduced-motion: reduce)");
+const shown = new Map();
+/** A number that runs to its new value when the page is drawn again. `key` tells which number it is. */
+export function counter(key, value, show = String, tag = "b") {
+  const n = el(tag), from = shown.get(key) ?? 0;
+  shown.set(key, value);
+  if (calm.matches || document.hidden || from === value || !Number.isFinite(value)) { n.textContent = show(value); return n; }
+  const t0 = performance.now(), ms = 900;
+  n.textContent = show(value); // the right number even if no frame is ever drawn
+  if (from) n.classList.add("changed");
+  const step = (now) => {
+    const k = Math.min(1, Math.max(0, (now - t0) / ms)), e = 1 - (1 - k) ** 3;
+    n.textContent = show(k < 1 ? Math.round(from + (value - from) * e) : value);
+    if (k < 1 && n.isConnected) requestAnimationFrame(step); else n.textContent = show(value);
+  };
+  requestAnimationFrame(step);
+  return n;
 }
 
 const NS = "http://www.w3.org/2000/svg";
