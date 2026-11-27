@@ -4,11 +4,11 @@ import { themePicker } from "/pwa.js";
 document.getElementById("prefs").append(themePicker({ theme: "Mavzu", auto: "Avtomatik", light: "Yorug‘", dark: "Qorong‘i" }));
 
 const app = document.getElementById("app");
-const CHANNEL = { web: "Sayt", hotel: "Mehmonxona QR", ai: "AI yordamchi" };
+const CHANNEL = { web: "Sayt", hotel: "Mehmonxona QR", ai: "AI yordamchi", widget: "Sayt vidjeti", partner: "Sotuv hamkori" };
 const RANGE = [[0, "Hammasi"], [30, "30 kun"], [7, "7 kun"]];
 let days = 0, demo = true, last = "", data = null;
 
-const tile = (label, value, show) => el("div.card.tile", {}, counter(label, value, show), el("span.muted", {}, label));
+const tile = (label, value, show) => el("div.card.tile", {}, typeof value === "number" ? counter(label, value, show) : el("b", {}, value), el("span.muted", {}, label));
 const liveBadge = el("span.live", { hidden: true }, el("i"), "Jonli");
 const bars = (rows, name, cols) => {
   const max = Math.max(1, ...rows.map((r) => r.unmet));
@@ -52,6 +52,8 @@ async function load() {
     top && el("div.note", {}, `Eng katta bo‘shliq: ${top.name}. ${top.unmet} ta qidiruv javobsiz, hali birorta ham taklif yo‘q.`),
     el("div.tiles", {}, tile("Mezbonlar ulushi (sinov to‘lovi)", p.totals.host, som), tile("To‘langan bronlar", p.totals.bookings), tile("Mehmonlar", p.totals.guests), tile("Sotuvdagi takliflar", p.listings)),
     p.platform && el("section.card", {}, el("h2", {}, "Biznes model (sinov to‘lovlari)"), el("dl.facts", {}, [["Bron komissiyasi", som(p.totals.platform)], ["Faol obunalar", String(p.platform.subscribers)], ["Oylik obuna daromadi", som(p.platform.mrr)], ["Jami obuna to‘lovlari", som(p.platform.subscriptions)]].map(([k, v]) => el("div", {}, el("dt", {}, k), el("dd", {}, v)))), el("p.small.muted", {}, "Faqat sinov rejimida ko‘rinadi.")),
+    el("section.card.noprint", {}, el("h2", {}, "Hudud hisoboti"), el("p.small.muted", {}, "Hokimlik va turizm boshqarmasi uchun: talab, taklif, bronlar va daromad bitta sahifada. Chop eting yoki PDF qilib saqlang."),
+      el("form.compose", { onsubmit: (e) => { e.preventDefault(); report(e.target.elements.region.value); } }, el("select", { name: "region", "aria-label": "Viloyat", dataset: { f: "region" } }, p.regions.map((r) => el("option", { value: r.region }, r.name))), el("button.primary", { type: "submit" }, "Hisobot"))),
     el("section.card", {}, el("h2", {}, "Javobsiz qidiruvlar xaritasi"), el("p.small.muted", {}, "Sxematik xarita. Raqam: javobsiz qidiruvlar soni. To‘qroq rang: ko‘proq."), tileMap(p.regions)),
     el("section.card", {}, el("h2", {}, "Viloyatlar"), bars(p.regions, "Viloyat", [["Jami qidiruv", "searches"], ["Taklif", "listings"]])),
     el("div.two", {},
@@ -65,6 +67,20 @@ async function load() {
         el("p.small.muted", {}, "GetYourGuide, Viator, Klook: ulanmagan, hamkorlik shartnomasi kerak. Tayyor eksport: ", el("a", { href: "/feeds/products.json" }, "products.json")))),
   ));
   if (focus) app.querySelector(`[data-f="${focus}"]`)?.focus();
+}
+/** One region on one printable sheet. */
+async function report(region) {
+  const r = await api(`/api/panel/report?region=${region}&days=${days || 90}`), pctOf = (a, b) => (b ? `${Math.round((a / b) * 100)}%` : "—");
+  const d = el("dialog.report", { "aria-label": `${r.name} hisoboti` }, el("div.stack", { style: "gap:18px" },
+    el("div.reporthead", {}, el("div", {}, el("p.small.muted", {}, "SilkRoad Experience OS · Talab hisoboti"), el("h2", {}, `${r.name}: so‘nggi ${r.days} kun`)), el("div.row.noprint", {}, el("button.primary", { onclick: () => print() }, "Chop etish"), el("button", { onclick: () => d.close() }, "Yopish"))),
+    r.sample && el("div.note.warn", {}, "Namoyish sayti: bronlar sinov to‘lovlari bilan."),
+    el("div.tiles", {}, [["Qidiruvlar", String(r.searches)], ["Javobsiz qolgan", `${r.unmet} (${pctOf(r.unmet, r.searches)})`], ["Sotuvdagi takliflar", `${r.supply.listings} · ${r.supply.hosts} mezbon`], ["Bronlar", `${r.bookings} · ${r.guests} mehmon`], ["Mezbonlar daromadi", r.host_income_uzs == null ? "kam ma’lumot" : som(r.host_income_uzs)]].map(([k, v]) => tile(k, v))),
+    el("div.two", {}, el("section", {}, el("h3", {}, "Nima qidirildi"), r.categories.length ? el("div.scroll", { tabindex: 0 }, el("table", {}, el("thead", {}, el("tr", {}, el("th", { scope: "col" }, "Mashg‘ulot"), el("th.n", { scope: "col" }, "Qidiruv"), el("th.n", { scope: "col" }, "Javobsiz"))), el("tbody", {}, r.categories.map((c) => el("tr", {}, el("td", {}, c.category), el("td.n", {}, String(c.n)), el("td.n", {}, String(c.unmet))))))) : el("p.muted", {}, "Ma’lumot yo‘q.")),
+      el("section", {}, el("h3", {}, "Qaysi tillarda va qachonga"), el("p", {}, r.languages.map((x) => `${LANG[x.lang] ?? x.lang}: ${x.n}`).join(", ") || "—"), el("p", {}, r.months.map((x) => `${x.month}: ${x.n}`).join(", ") || "Sana bilan qidiruv yo‘q."))),
+    el("p.small.muted", {}, `Faqat haqiqiy qidiruvlar. Daromad kamida 3 mezbon ishlagan hududda ko‘rsatiladi. Tuzilgan: ${new Date(r.generated_at).toLocaleString("uz")}.`)));
+  d.onclose = () => d.remove();
+  document.body.append(d);
+  d.showModal();
 }
 const safe = () => load().catch((e) => { if (!data) app.replaceChildren(el("div.wrap", {}, el("div.note.bad", { role: "alert" }, e.message))); });
 safe();

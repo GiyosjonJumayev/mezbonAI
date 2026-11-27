@@ -20,6 +20,14 @@ Please report a vulnerability privately through GitHub: **Security → Report a 
 | Live streams | They carry only "something changed", never names, amounts or booking links. An unlisted offer is announced only to those who have it open. Streams are limited per address and in total. |
 | A price changed between seeing and paying | The booking states the total the guest saw; a higher one is refused. The server alone computes the price. |
 | Waiting list addresses | One message each, at most ten waits per address, limited signing up, deleted after the day. The provider sees only numbers. Opening the link in the message changes nothing by itself. |
+| Resellers | Each has its own key, stored only as a hash and shown once. A key sees only offers its makers allowed for resale and only its own bookings. Revoking it stops sales at once. A reseller's share comes from a price a visitor can never set. |
+| Our booking box on other websites | Only the booking box of one offer may be framed. Provider cookies are SameSite=Strict, so a framing site can never act for a provider. Payment opens in a new tab. |
+| Promo codes | Checking codes is limited per address, and every refusal looks the same. A discount can never exceed the platform's share. |
+| Pages for search engines | Text from offers is escaped before it goes into the page; structured data cannot close its script element. Bookings and private pages say noindex. |
+| Group requests | The guest's e-mail is never shown to the maker; the platform sends the answer. A quote can only be booked at the price shown, once. Asking is limited per address and per e-mail. |
+| Referral codes | A reward is given once per paying friend and never for booking with one's own code. Guest codes are kept apart from campaign codes. |
+| Gift vouchers | The code exists only once paid. The balance is taken inside the booking's payment, with a check that it is still there, so two bookings cannot spend the same money; a refund gives it back once. Checking codes is limited per address and every refusal looks the same. |
+| Bank details | A provider's account number is shown only to that provider and to administrators, and every change is in the audit log. Recording a payout list is all or nothing. |
 | Guessing who has an account | Sign-in and "find my booking" by e-mail give the same answer for every address. |
 | Double sale, double payment, double refund | Row locks, unique constraints and idempotent steps, tested with simultaneous requests. |
 | Insider or leaked server account | The server's database account cannot change tables or rewrite the audit log. A trigger stops even the owner from editing it. |

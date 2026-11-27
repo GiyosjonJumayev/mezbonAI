@@ -6,7 +6,7 @@ const WEEK = ["Yak", "Du", "Se", "Chor", "Pay", "Ju", "Shan"];
 const day = (d) => `${+d.slice(8)}-${MONTHS[+d.slice(5, 7) - 1]}`;
 const weekday = (d) => WEEK[new Date(d + "T00:00:00Z").getUTCDay()];
 export const PLAN_NAME = { free: "Bepul", pro: "Pro", business: "Business" };
-const CHANNEL = { web: "Sayt", hotel: "Mehmonxona QR", ai: "AI yordamchi" };
+const CHANNEL = { web: "Sayt", hotel: "Mehmonxona QR", ai: "AI yordamchi", widget: "Sayt vidjeti", partner: "Sotuv hamkori" };
 const STATUS = { confirmed: "Tasdiqlangan", paid: "Javob kutilmoqda", declined: "Rad etilgan", cancelled: "Bekor qilingan" };
 const pct = (x) => (x == null ? "—" : `${Math.round(x * 100)}%`);
 const card = (title, ...kids) => el("section.card", {}, el("h2", {}, title), ...kids);

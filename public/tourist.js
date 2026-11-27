@@ -1,12 +1,15 @@
 import { PAY_NAME, act, api, ask, copy, el, plate, store, subscribe, toast, uzs, visual } from "/common.js";
 import { art, icon } from "/art.js";
 import { explore } from "/explore.js";
-import { unitPrice } from "/price.js";
+import { extrasCost, unitPrice } from "/price.js";
 import { planner, tripPage } from "/trip.js";
 import { demoBanner, enablePush, installButton, pushSupported, themePicker } from "/pwa.js";
 
 const app = document.getElementById("app");
 const query = () => new URLSearchParams(location.search);
+/** Shown inside a provider's own website: the booking box of one offer, nothing around it. */
+const embedded = query().get("embed") === "1" && Boolean(query().get("l"));
+if (embedded) document.documentElement.classList.add("embed");
 let cfg;
 try { cfg = await api("/api/config"); } catch (e) {
   app.replaceChildren(el("div.wrap", {}, el("div.note.bad", { role: "alert" }, e.message), el("button", { onclick: () => location.reload() }, "↻")));
@@ -95,7 +98,7 @@ function nextLine(l) {
   return el("span.soon" + (l.next.free <= 3 ? ".few" : ""), {}, el("i"), `${dayName(l.next.date)}, ${l.next.time} · ${l.next.free} ${t("left")}`);
 }
 function card(l, level = "h3", extra = {}) {
-  const pic = el("div.art", {}, visual(l), l.demo && el("span.badge", {}, t("sample"))), spot = el("div.spot"), foot = el("div.foot");
+  const pic = el("div.art", {}, visual(l), l.demo && el("span.badge", {}, t("sample")), l.promoted && el("span.badge.ad", {}, t("promoted"))), spot = el("div.spot"), foot = el("div.foot");
   const fill = (x) => { spot.replaceChildren(...[nextLine(x)].filter(Boolean)); foot.replaceChildren(...[priceOf(x.next ?? { unit: x.price_uzs, before: x.price_uzs }), rating(x)].filter(Boolean)); };
   fill(l);
   const n = el("article.tile-l", {}, link({ l: l.id, ...Object.fromEntries(Object.entries(extra).filter(([, v]) => v)) }, "a", { before: () => { pic.style.viewTransitionName = "pic"; } }, pic,
@@ -139,14 +142,36 @@ async function detail(id, lid) {
   const name = el("input", { maxlength: 80, autocomplete: "name", required: true, value: store.get("name") ?? "" });
   const contact = contactFields();
   const dayRow = el("div.days", { role: "radiogroup", "aria-label": t("date") }), timeRow = el("div.times", { role: "radiogroup", "aria-label": t("time") });
-  const out = el("output"), total = el("dd.all"), count = el("dt.all"), head = el("div.pricehead"), why = el("p.small.row.deal", { role: "status" }), buy = el("span.price");
+  const giftRow = el("div.sumrow"), discountRow = el("div.sumrow"), out = el("output"), total = el("dd.all"), count = el("dt.all"), head = el("div.pricehead"), why = el("p.small.row.deal", { role: "status" }), buy = el("span.price");
   const less = el("button", { type: "button", "aria-label": t("fewer"), onclick: () => { guests--; draw(); } }, "−"), more = el("button", { type: "button", "aria-label": t("more"), onclick: () => { guests++; draw(); } }, "+");
   const submit = el("button.primary.wide", { type: "submit" }, t("book"));
   let due = 0;
+  let promo = null; // { code, pct } once the server accepted it for this offer
+  const code = el("input", { maxlength: 20, autocomplete: "off", autocapitalize: "characters", spellcheck: "false", "aria-label": t("promoLabel"), value: query().get("promo") ?? store.get("promo") ?? "" });
+  const promoSay = el("p.small", { role: "status" });
+  const applyPromo = async (quiet) => {
+    if (!code.value.trim()) { promo = null; promoSay.textContent = ""; return draw(); }
+    try { promo = await api("/api/promo/check", { code: code.value, listing_id: l.id }); store.set("promo", promo.code); promoSay.className = "small deal"; promoSay.textContent = `${promo.code}: −${promo.pct}%`; }
+    catch (e) { promo = null; if (!quiet) { promoSay.className = "small bad"; promoSay.textContent = whyNot(e); } }
+    draw();
+  };
+  let gift = null; // { code, balance_uzs } once accepted
+  const giftIn = el("input", { maxlength: 13, autocomplete: "off", autocapitalize: "characters", spellcheck: "false", "aria-label": t("giftUse"), value: query().get("gift") ?? "" }), giftSay = el("p.small", { role: "status" });
+  const applyGift = async () => {
+    if (!giftIn.value.trim()) { gift = null; giftSay.textContent = ""; return draw(); }
+    try { gift = await api("/api/voucher/check", { code: giftIn.value }); giftSay.className = "small deal"; giftSay.textContent = `${t("giftLeft")}: ${money(gift.balance_uzs)}`; }
+    catch (e) { gift = null; giftSay.className = "small bad"; giftSay.textContent = whyNot(e); }
+    draw();
+  };
+  const giftBox = el("details.promo", { open: Boolean(giftIn.value) }, el("summary", {}, t("giftUse")), el("div.compose", {}, giftIn, el("button", { type: "button", onclick: applyGift }, t("promoApply"))), giftSay);
+  const promoBox = el("details.promo", { open: Boolean(code.value) }, el("summary", {}, t("promoLabel")), el("div.compose", {}, code, el("button", { type: "button", onclick: () => applyPromo(false) }, t("promoApply"))), promoSay);
+  const picked = new Set(), extraBox = (l.extras ?? []).length > 0 && el("fieldset.extras", {}, el("legend", {}, t("extrasTitle")), l.extras.map((x) => el("label.check", {}, el("input", { type: "checkbox", value: x.kind, onchange: (e) => { e.target.checked ? picked.add(x.kind) : picked.delete(x.kind); draw(); } }), el("span", {}, t(`x_${x.kind}`), el("small.muted", {}, ` +${uzs(x.price, lang, null)} ${x.per === "person" ? t("perPerson") : t("perGroup")}`)))));
   function draw() {
     guests = Math.max(1, Math.min(guests, slot.free));
     const focus = [dayRow, timeRow].find((r) => r.contains(document.activeElement)), p = unitPrice(l, day.date, slot.time, guests), lowest = (d) => Math.min(...d.times.filter((x) => x.free).map((x) => unitPrice(l, d.date, x.time).pct)); // what is special about the day, not about the group
-    due = p.unit * guests;
+    const add = extrasCost(l, [...picked], guests);
+    const gross = p.unit * guests + add.total, off = promo ? Math.round((gross * promo.pct) / 100) : 0;
+    due = gross - off;
     dayRow.replaceChildren(...days.map((d) => el("button", { type: "button", role: "radio", "aria-checked": String(d === day), tabindex: d === day ? 0 : -1, "aria-label": longDate(d.date), onclick: () => { day = d; slot = d.times.find((x) => x.time === slot.time && x.free > 0) ?? first(d); draw(); } },
       el("span", {}, fmt({ weekday: "short" }).format(asDate(d.date))), el("b", {}, String(+d.date.slice(8))), el("span", {}, fmt({ month: "short" }).format(asDate(d.date))), lowest(d) < 0 && el("span.off", {}, `−${-lowest(d)}%`))));
     timeRow.replaceChildren(...day.times.map((x) => el("button", { type: "button", role: "radio", "aria-checked": String(x === slot), tabindex: x === slot ? 0 : -1, disabled: !x.free, onclick: () => { slot = x; draw(); } }, x.time, el("span", {}, x.free ? `${x.free} ${t("left")}` : t("soldOut")))));
@@ -158,8 +183,11 @@ async function detail(id, lid) {
     buy.replaceChildren(...priceOf(p).childNodes);
     why.hidden = !p.why && !l.pricing.group;
     why.replaceChildren(icon("wallet", 18), p.why ? t(`p_${p.why}`) : `${t("groupFrom")}: ${l.pricing.group?.from} (−${l.pricing.group?.pct}%)`);
-    count.textContent = `${t("total")} (${guests} × ${uzs(p.unit, lang, null)})`;
+    count.textContent = `${t("total")} (${guests} × ${uzs(p.unit, lang, null)}${add.total ? ` + ${uzs(add.total, lang, null)}` : ""})`;
     total.textContent = money(due);
+    const byGift = gift ? Math.min(gift.balance_uzs, due) : 0;
+    discountRow.replaceChildren(...(off ? [el("dt", {}, `${t("discount")} (${promo.code})`), el("dd.deal", {}, `−${money(off)}`)] : []));
+    giftRow.replaceChildren(...(byGift ? [el("dt", {}, t("giftPays")), el("dd.deal", {}, `−${money(byGift)}`), el("dt.all", {}, t("toPay")), el("dd.all", {}, money(due - byGift))] : []));
   }
   for (const r of [dayRow, timeRow]) {
     r.addEventListener("click", () => r.querySelector('[aria-checked="true"]')?.focus());
@@ -176,22 +204,29 @@ async function detail(id, lid) {
     submit.disabled = true;
     try {
       store.set("name", name.value.trim());
-      const b = await api("/api/bookings", { listing_id: l.id, date: day.date, time: slot.time, guests, guest_name: name.value, ...contact.value(), lang, hotel_code: hotel?.code, expect_uzs: due });
+      const b = await api("/api/bookings", { listing_id: l.id, date: day.date, time: slot.time, guests, guest_name: name.value, ...contact.value(), lang, hotel_code: hotel?.code, expect_uzs: due, extras: [...picked], ...(promo && { promo: promo.code }), ...(gift && { voucher: gift.code }), ...(embedded && { source: "widget" }) });
       store.set("bookings", JSON.stringify([b.token, ...store.json("bookings", [])].slice(0, 30)));
+      if (embedded) { // payment pages do not open inside another website
+        const url = `${location.origin}/?b=${b.token}&lang=${lang}`;
+        window.open(url, "_blank", "noopener");
+        return form.replaceChildren(el("div.note.ok", { role: "status" }, t("embedDone")), el("a.btn.primary.wide", { href: url, target: "_blank", rel: "noopener" }, t("embedOpen")));
+      }
       go({ b: b.token });
     } catch (err) {
       toast(whyNot(err), true);
       submit.disabled = false;
       if (["full", "closed", "past"].includes(err.code)) refresh().catch(() => {});
       if (err.code === "price") { l = await api(path).catch(() => l); draw(); }
+      if (err.code === "voucher") { gift = null; giftSay.className = "small bad"; giftSay.textContent = whyNot(err); draw(); }
+      if (err.code === "promo") { promo = null; promoSay.textContent = whyNot(err); draw(); }
     }
   } },
   el("div.row.between", {}, days.length ? head : priceOf({ unit: l.price_uzs, before: l.price_uzs }, "span.price.big"), rating(l)),
   days.length ? [why, el("div.stack", { style: "gap:6px" }, el("span.small.muted.row", {}, t("date"), el("span.live", { hidden: true }, el("i"), t("liveOn"))), dayRow), el("div.stack", { style: "gap:6px" }, el("span.small.muted", {}, t("time")), timeRow),
-    el("div.stack", { style: "gap:6px" }, el("span.small.muted", {}, t("guests")), el("div.stepper", {}, less, out, more)), el("label", {}, t("name"), name), contact.node, el("dl.sum", {}, count, total), fx() && el("p.small.muted", {}, t("rateNote")), submit, el("p.small.muted.row", {}, icon("check", 18), t("freeCancel"))]
+    el("div.stack", { style: "gap:6px" }, el("span.small.muted", {}, t("guests")), el("div.stepper", {}, less, out, more)), extraBox, el("label", {}, t("name"), name), contact.node, promoBox, giftBox, el("dl.sum", {}, discountRow, count, total, giftRow), fx() && el("p.small.muted", {}, t("rateNote")), submit, el("p.small.muted.row", {}, icon("check", 18), t("freeCancel"))]
     : el("p.note.warn", {}, t("noSlots")));
-  if (days.length) draw();
-  const wait = el("div", {}, waitBox(l, () => open, () => guests));
+  if (days.length) { draw(); if (code.value) applyPromo(true); if (giftIn.value) applyGift(); }
+  const wait = el("div.stack", { style: "gap:16px" }, waitBox(l, () => open, () => guests), cfg.mail && groupBox(l));
 
   /** Places as they are now, keeping what the visitor chose if it is still free. */
   async function refresh() {
@@ -205,7 +240,7 @@ async function detail(id, lid) {
     slot = day.times.find((x) => x.time === was.time && x.free > 0) ?? first(day);
     draw();
     if (day.date !== was.date || slot.time !== was.time) toast(t("justTaken"), true);
-    if (!wait.querySelector("details[open]")) wait.replaceChildren(...[waitBox(l, () => open, () => guests)].filter(Boolean));
+    if (!wait.querySelector("details[open]")) wait.replaceChildren(...[waitBox(l, () => open, () => guests), cfg.mail && groupBox(l)].filter(Boolean));
   }
   keep(subscribe(`${path}/live`, async (ev) => {
     if (ev.t === "hello") for (const n of form.querySelectorAll(".live")) n.hidden = false;
@@ -222,10 +257,14 @@ async function detail(id, lid) {
   fav.style.position = "static";
   const similar = el("section.stack", { style: "gap:18px" });
   const bar = days.length && el("div.buybar", {}, buy, el("button.primary", { onclick: () => { form.scrollIntoView({ behavior: calm.matches ? "auto" : "smooth", block: "start" }); } }, t("book")));
+  if (embedded) { // the booking box alone, with the offer's name and a way to the full page
+    app.replaceChildren(el("div.wrap.embedbox", {}, el("div.row.between", {}, el("h1.h2", {}, l.i18n[lang].title), el("a.small", { href: `/?l=${l.id}&lang=${lang}`, target: "_blank", rel: "noopener" }, t("poweredBy"))), form, wait));
+    return;
+  }
   page(el("div.row.between", {}, back(), el("div.row", {}, share, fav)), gallery(l), el("div.two", {},
     el("div.stack", { style: "gap:26px" },
       el("div.stack", { style: "gap:14px" }, el("h1", {}, l.i18n[lang].title),
-        el("ul.specs", {}, [["pin", placeOf(l)], ["clock", `${l.duration_min} ${t("minutes")}`], ["people", `${l.capacity} ${t("upTo")}`]].map(([i, v]) => el("li", {}, icon(i, 20), v)), l.reviews > 0 && el("li", {}, rating(l)))),
+        el("ul.specs", {}, [["pin", placeOf(l)], ["clock", `${l.duration_min} ${t("minutes")}`], ["people", `${l.capacity} ${t("upTo")}`]].map(([i, v]) => el("li", {}, icon(i, 20), v)), l.reviews > 0 && el("li", {}, rating(l)), l.instant && el("li.deal", {}, icon("check", 20), t("instantBadge")))),
       el("div.who", {}, el("span.avatar", { "aria-hidden": "true" }, [...l.host][0].toUpperCase()), el("div", {}, el("b", {}, link({ host: l.host_id }, "a", {}, l.host)), el("div.muted.small", {}, cfg.providerTypes[l.host_type][lang], l.hosted > 0 && ` · ${l.hosted} ${t("hosted")}`), verified(l))),
       el("p", { style: "font-size:1.08rem;max-width:62ch" }, l.i18n[lang].description),
       el("ul.promise", {}, [["check", "freeCancel"], ["chart", "trustPrice"], ["globe", "trustTalk"]].map(([i, k]) => el("li", {}, icon(i, 26), t(k)))),
@@ -255,6 +294,64 @@ function waitBox(l, open, guests) {
   const box = el("details.card.wait", {}, el("summary", {}, icon("bell", 20), t("waitTitle")), el("form.stack", { onsubmit: (e) => { e.preventDefault(); send({ currentTarget: e.submitter }); } }, el("p.small.muted", {}, t("waitText")), el("label", {}, t("date"), slot), el("label", {}, t("email"), email), el("button", { type: "submit" }, t("waitBtn"))));
   return box;
 }
+/** A larger group or a private visit: the host answers with one price. Needs a mail server for the answer. */
+function groupBox(l) {
+  const date = el("input", { type: "date", required: true, min: addDays(today(), 1), max: addDays(today(), 365) }), size = el("input", { type: "number", required: true, min: 1, max: 300, inputmode: "numeric", value: Math.max(l.capacity + 1, 6) });
+  const only = el("input", { type: "checkbox" }), name = el("input", { required: true, maxlength: 80, autocomplete: "name", value: store.get("name") ?? "" }), email = el("input", { type: "email", required: true, maxlength: 120, autocomplete: "email", value: store.get("email") ?? "" }), note = el("textarea", { maxlength: 600, rows: 2 });
+  const box = el("details.card.wait", {}, el("summary", {}, icon("people", 20), t("groupAsk")));
+  const send = run(async () => {
+    const r = await api(`/api/listings/${l.id}/group`, { date: date.value, guests: Number(size.value), private: only.checked, name: name.value, email: email.value, note: note.value.trim() || null, lang });
+    store.set("name", name.value.trim()); store.set("email", email.value.trim());
+    store.set("requests", JSON.stringify([r.token, ...store.json("requests", [])].slice(0, 20)));
+    box.replaceChildren(el("div.note.ok", { role: "status" }, t("groupSent"), " ", link({ q: r.token }, "a", {}, t("open"))));
+  });
+  box.append(el("form.stack", { onsubmit: (e) => { e.preventDefault(); send({ currentTarget: e.submitter }); } }, el("p.small.muted", {}, t("groupText")),
+    el("div.fields", {}, el("label", {}, t("date"), date), el("label", {}, t("guests"), size)), el("label.check", {}, only, el("span", {}, t("groupPrivate"))),
+    el("label", {}, t("name"), name), el("label", {}, t("email"), email), el("label", {}, t("reportText"), note), el("button", { type: "submit" }, t("groupSend"))));
+  return box;
+}
+/** Buying a gift: the amount, for whom, a message. It is paid on the next page. */
+function giftPage() {
+  const presets = [300_000, 500_000, 1_000_000], amount = el("input", { type: "number", required: true, min: cfg.voucher.min, max: cfg.voucher.max, step: 10000, inputmode: "numeric", value: 500_000 });
+  const chips = el("div.chips", { role: "group", "aria-label": t("total") }, presets.map((n) => el("button", { type: "button", "aria-pressed": String(n === 500_000), onclick: () => { amount.value = n; for (const c of chips.children) c.setAttribute("aria-pressed", String(Number(c.dataset.n) === n)); }, dataset: { n } }, money(n))));
+  amount.addEventListener("input", () => { for (const c of chips.children) c.setAttribute("aria-pressed", String(Number(c.dataset.n) === Number(amount.value))); });
+  const recipient = el("input", { maxlength: 80 }), message = el("textarea", { maxlength: 400, rows: 3 }), name = el("input", { required: true, maxlength: 80, autocomplete: "name", value: store.get("name") ?? "" }), email = el("input", { type: "email", required: true, maxlength: 120, autocomplete: "email", value: store.get("email") ?? "" });
+  const send = run(async () => { const r = await api("/api/vouchers", { amount_uzs: Number(amount.value), recipient: recipient.value.trim() || null, message: message.value.trim() || null, name: name.value, email: email.value, lang }); store.set("gifts", JSON.stringify([r.token, ...store.json("gifts", [])].slice(0, 20))); go({ giftcard: r.token }); });
+  page(back(), el("div.two", {}, el("section.giftintro", {}, art("gift-hero", "embroidery"), el("div.stack", {}, el("h1", {}, t("giftTitle")), el("p", {}, t("giftText")))),
+    el("form.card", { onsubmit: (e) => { e.preventDefault(); send({ currentTarget: e.submitter }); } }, el("div.stack", { style: "gap:8px" }, el("span.small.muted", {}, t("total")), chips, el("label", {}, t("giftOther"), amount)),
+      el("label", {}, t("giftFor"), recipient), el("label", {}, t("giftMessage"), message), el("label", {}, t("name"), name), el("label", {}, t("email"), email), el("button.primary.wide", { type: "submit" }, icon("wallet", 20), t("giftBuy")))));
+}
+/** The gift card: pay for it, then print or send it. */
+async function giftCardPage(id, token) {
+  let v = await api(`/api/vouchers/${encodeURIComponent(token)}`);
+  if (v.status === "unpaid") v = await api(`/api/vouchers/${encodeURIComponent(token)}/refresh`, {}).catch(() => v); // back from the payment page
+  if (id !== renderId) return;
+  if (v.status === "unpaid") return page(back(), el("div.card", { style: "max-width:560px" }, el("h1.h2", {}, t("giftTitle")), el("dl.sum", {}, el("dt.all", {}, t("total")), el("dd.all", {}, money(v.amount_uzs))),
+    el("fieldset.pay", {}, el("legend", {}, t("payWith")), cfg.payMethods.map((method, n) => el("button" + (n ? "" : ".primary") + ".wide", { type: "button", onclick: run(async () => { const r = await api(`/api/vouchers/${encodeURIComponent(token)}/pay`, { method }); if (r.url) location.href = r.url; else render(); }) }, PAY_NAME[method] ? [icon("wallet", 20), PAY_NAME[method]] : t("pay"))))));
+  const url = `${location.origin}/?gift=${v.code}&lang=${lang}`;
+  page(el("div.noprint", {}, back()), el("section.giftcard", {}, art(`gift-${v.code}`, "embroidery"), el("div.stack", { style: "gap:10px" }, el("p.small", {}, "SilkRoad Experience OS"), el("h1", {}, t("giftTitle")),
+    v.recipient && el("p", {}, `${t("giftFor")}: `, el("b", {}, v.recipient)), v.message && el("p.wish", { dir: "auto" }, v.message),
+    el("b.code", { dir: "ltr" }, v.code), el("p", {}, `${t("giftLeft")}: `, el("b", {}, money(v.balance_uzs)), ` · ${t("giftValid")}: ${fmt({ day: "numeric", month: "long", year: "numeric" }).format(asDate(v.valid_until))}`))),
+    el("div.row.noprint", {}, el("button.primary", { onclick: () => print() }, t("print")), el("button", { onclick: async () => { try { if (navigator.share) return await navigator.share({ title: t("giftTitle"), text: `${t("giftCode")}: ${v.code}`, url }); } catch (e) { if (e.name === "AbortError") return; } if (await copy(url)) toast(t("copied")); } }, icon("share", 20), t("share")), link({}, "a.btn", {}, t("explore"))));
+}
+
+/** The host's answer to a group, and booking it. */
+async function quotePage(id, token) {
+  const g = await api(`/api/requests/${encodeURIComponent(token)}`);
+  if (id !== renderId) return;
+  if (g.booking) return go({ b: g.booking });
+  const title = g.i18n[lang].title;
+  document.title = `${title} | SilkRoad`;
+  const book = run(async () => { const r = await api(`/api/requests/${encodeURIComponent(token)}/book`, { expect_uzs: g.quote.total_uzs }); store.set("bookings", JSON.stringify([r.booking, ...store.json("bookings", [])].slice(0, 30))); go({ b: r.booking }); });
+  page(back(), el("div.card", { style: "max-width:640px" }, el("h1.h2", {}, g.quote ? t("quoteTitle") : title), g.quote && el("p.muted", {}, title),
+    el("dl.facts", {}, [[t("date"), longDate(g.date) + (g.quote ? `, ${g.quote.time}` : "")], [t("guests"), String(g.guests) + (g.private ? ` · ${t("groupPrivate")}` : "")], [t("where"), placeOf(g)]].map(([k, v]) => el("div", {}, el("dt", {}, k), el("dd", {}, v)))),
+    g.status === "declined" ? el("div.note.bad", { role: "status" }, t("quoteDeclined"))
+      : g.expired ? el("div.note.warn", { role: "status" }, t("noSlots"))
+      : g.quote ? [g.quote.note && el("p", { dir: "auto" }, g.quote.note), el("dl.sum", {}, el("dt.all", {}, t("total")), el("dd.all", {}, money(g.quote.total_uzs))), el("button.primary.wide", { onclick: book }, t("quoteBook")), el("p.small.muted.row", {}, icon("check", 18), t("freeCancel"))]
+      : el("div.note", { role: "status" }, t("quoteWait"))));
+  if (!g.quote && g.status === "new") poll = setInterval(() => { if (!document.hidden) quotePage(id, token).catch(() => {}); }, 20000);
+}
+
 /** From the link in the e-mail. Opening a link never changes anything by itself. */
 function leavePage(token) {
   page(back(), el("div.card", { style: "max-width:560px" }, el("h1.h2", {}, t("waitStop")), el("div.row", {}, el("button.primary", { onclick: run(async (e) => { const c = e.currentTarget.closest(".card"); await api(`/api/waitlist/${encodeURIComponent(token)}/leave`, {}); c.replaceChildren(el("div.note.ok", { role: "status" }, t("waitLeft"))); }) }, t("waitStop")))));
@@ -353,6 +450,21 @@ async function moveForm(b, done) {
     el("div.row", {}, el("button.primary", { onclick: run(async () => { await api(`/api/bookings/${b.token}/reschedule`, { date: date.value, time: time.value }); toast(t("moved")); await done(); }) }, t("move")), el("button", { onclick: () => done() }, t("no"))));
 }
 
+/** Give 10%, get 10%: the guest's own code to share. */
+function referCard(b) {
+  const box = el("section.card.refer", {}, el("h2", {}, t("refTitle")), el("p.muted", {}, t("refText")));
+  const show = (code) => {
+    const url = `${location.origin}/?promo=${code}&lang=${lang}`;
+    box.replaceChildren(el("h2", {}, t("refTitle")), el("p.muted", {}, t("refText")), el("b.code", { dir: "ltr" }, code), el("div.row", {},
+      el("button.primary", { onclick: async () => { try { if (navigator.share) return await navigator.share({ title: "SilkRoad", text: `${t("refTitle")}: ${code}`, url }); } catch (e) { if (e.name === "AbortError") return; } if (await copy(url)) toast(t("copied")); } }, icon("share", 20), t("share")),
+      el("button", { onclick: async () => { if (await copy(code)) toast(t("copied")); } }, t("copyLink"))));
+  };
+  const saved = store.get(`ref.${b.token}`);
+  if (saved) show(saved);
+  else box.append(el("button.primary", { onclick: run(async () => { const r = await api(`/api/bookings/${b.token}/referral`, {}); store.set(`ref.${b.token}`, r.code); show(r.code); }) }, t("refButton")));
+  return box;
+}
+
 function notifyCard(b) {
   if (!pushSupported() || store.get(`push.${b.token}`) || !["pending", "paid", "confirmed"].includes(b.status)) return null;
   const box = el("div.card", {}, el("div.row", {}, icon("bell"), el("b", {}, t("notifyOn"))), el("p.small.muted", {}, t("notifyWhy")), el("button", { onclick: run(async () => {
@@ -392,8 +504,10 @@ async function bookingView(id, token) {
         ["refund_due", "refunded"].includes(b.payment?.status) && el("div.note" + (b.payment.status === "refunded" ? ".ok" : ""), { role: "status" }, t(b.payment.status === "refunded" ? "refunded" : "refundDue")),
         b.status === "pending" && ["failed", "cancelled"].includes(b.payment?.status) && el("div.note.bad", { role: "status" }, t("payFail")),
         el("dl.facts", {}, [[t("date"), longDate(b.date)], [t("time"), b.time], [t("guests"), String(b.guests)], [t("name"), b.guest_name], [t("where"), placeOf(b)]].map(([k, v]) => el("div", {}, el("dt", {}, k), el("dd", {}, v)))),
-        el("dl.sum", {}, [[t("toHost"), b.host_uzs], ...(b.hotel ? [[b.hotel, b.hotel_uzs]] : []), ["SilkRoad", b.platform_uzs]].map(([k, v]) => [el("dt", {}, k), el("dd", {}, money(v))]), el("dt.all", {}, t("total")), el("dd.all", {}, money(b.total_uzs))),
-        b.status === "pending" && cfg.payMethods.length > 0 && el("fieldset.pay", {}, el("legend", {}, t("payWith")), cfg.payMethods.map((method, n) => el("button" + (n ? "" : ".primary") + ".wide", { type: "button", onclick: run(async () => {
+        b.extras.length > 0 && el("p.small", {}, `${t("extrasTitle")}: `, b.extras.map((x) => t(`x_${x.kind}`)).join(", ")),
+        el("dl.sum", {}, [[t("toHost"), b.host_uzs], ...(b.hotel ? [[b.hotel, b.hotel_uzs]] : []), ...(b.reseller ? [[b.reseller, b.partner_uzs]] : []), ["SilkRoad", b.platform_uzs]].map(([k, v]) => [el("dt", {}, k), el("dd", {}, money(v))]), b.discount_uzs > 0 && [el("dt", {}, `${t("discount")} (${b.promo})`), el("dd.deal", {}, `−${money(b.discount_uzs)}`)], el("dt.all", {}, t("total")), el("dd.all", {}, money(b.total_uzs)), b.voucher_uzs > 0 && [el("dt", {}, t("giftPays")), el("dd.deal", {}, `−${money(b.voucher_uzs)}`), el("dt.all", {}, t("toPay")), el("dd.all", {}, money(b.due_uzs))]),
+        (b.status === "pending" || b.can_revive) && b.due_uzs === 0 && el("button.primary.wide", { onclick: run(async () => { await api(`/api/bookings/${b.token}/pay`, { method: "voucher" }); await load(true); }) }, icon("wallet", 20), t("payGift")),
+        (b.status === "pending" || b.can_revive) && b.due_uzs > 0 && cfg.payMethods.length > 0 && el("fieldset.pay", {}, el("legend", {}, t("payWith")), cfg.payMethods.map((method, n) => el("button" + (n ? "" : ".primary") + ".wide", { type: "button", onclick: run(async () => {
           const r = await api(`/api/bookings/${b.token}/pay`, { method });
           if (r.url) location.href = r.url; else await load(true);
         }) }, PAY_NAME[method] ? [icon("wallet", 20), PAY_NAME[method]] : t("pay"))), cfg.payMethods.some((m) => PAY_NAME[m]) && el("p.small.muted.row", {}, icon("shield", 18), t("paySafe"))),
@@ -406,6 +520,8 @@ async function bookingView(id, token) {
         el("p.small.muted", {}, t("keepLink"))),
       el("div.stack", { style: "gap:24px" },
         b.ticket ? ticketCard(b) : b.status === "paid" && el("div.card", {}, el("h2", {}, t("ticket")), el("p.muted", {}, t("ticketWait"))),
+        cfg.telegramBot && ["pending", "paid", "confirmed"].includes(b.status) && el("div.card", {}, b.telegram ? el("p.deal.row", {}, icon("check", 20), t("tgDone")) : el("button", { onclick: run(async () => { const r = await api(`/api/bookings/${b.token}/telegram`, {}); window.open(r.url, "_blank", "noopener"); }) }, icon("bell", 20), t("tgButton"))),
+        ["paid", "confirmed"].includes(b.status) && b.has_email && referCard(b),
         notifyCard(b),
         b.can_review && reviewForm(b, () => load(true)),
         b.my_rating && el("div.card", {}, el("p", {}, el("span.star", {}, "★".repeat(b.my_rating)), " ", t("thanks"))),
@@ -458,7 +574,7 @@ function chrome(q) {
   document.getElementById("skip").textContent = t("skip");
   document.getElementById("foot").textContent = cfg.testPayments ? `${t("tagline")} ${t("testNote")}` : t("tagline");
   const cur = Object.keys(rates).length > 0 && el("select", { "aria-label": t("currency"), title: t("rateNote"), onchange: () => { store.set("fx", cur.value); render(); } }, ["UZS", ...Object.keys(rates)].map((c) => el("option", { value: c, selected: c === (fx()?.code ?? "UZS") }, c)));
-  document.getElementById("prefs").replaceChildren(...[cur].filter(Boolean), installButton(t("install")), themePicker({ theme: t("theme"), auto: t("auto"), light: t("light"), dark: t("dark") }), el("a.back", { href: `/impact?lang=${["uz", "ru"].includes(lang) ? lang : "en"}` }, t("impact")), el("a.back", { href: "/panel" }, "Talab paneli"));
+  document.getElementById("prefs").replaceChildren(...[cur].filter(Boolean), installButton(t("install")), themePicker({ theme: t("theme"), auto: t("auto"), light: t("light"), dark: t("dark") }), el("a.back", { href: `/impact?lang=${["uz", "ru"].includes(lang) ? lang : "en"}` }, t("impact")), el("a.back", { href: "/?gift=1" }, t("giftNav")), el("a.back", { href: "/panel" }, "Talab paneli"));
 }
 
 const tripCtx = () => ({ app, query, swap, card, dayName, keep, offlineNote, calm, t, cfg, lang, run, why: whyNot, money, longDate, regionName, placeOf, link, page, back, go, hotel, contactFields, addDays, today, copy, alive: (id) => id === renderId, every: (fn, ms) => { poll = setInterval(() => { if (!document.hidden) fn().catch(() => {}); }, ms); } });
@@ -476,7 +592,10 @@ async function render() {
   const q = query();
   chrome(q);
   try {
-    if (q.get("b") && q.has("receipt")) await receiptPage(id, q.get("b"));
+    if (q.get("q")) await quotePage(id, q.get("q"));
+    else if (q.get("giftcard")) await giftCardPage(id, q.get("giftcard"));
+    else if (q.has("gift") && !q.get("l")) giftPage();
+    else if (q.get("b") && q.has("receipt")) await receiptPage(id, q.get("b"));
     else if (q.get("b") && q.has("ticket")) await ticketPage(id, q.get("b"));
     else if (q.get("b")) await bookingView(id, q.get("b"));
     else if (q.get("trip")) await tripPage(tripCtx(), id, q.get("trip"));

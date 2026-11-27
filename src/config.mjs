@@ -52,7 +52,7 @@ export function loadConfig(env = process.env) {
     port: Number(env.PORT) || 4321, host: env.HOST || "127.0.0.1", trustProxy: env.TRUST_PROXY === "1",
     dataDir: env.MEZBON_DATA || path.join(ROOT, "data"), seed: demoSite || (env.SEED !== "0" && !production), demoSite, stage: demoSite || (!production && testPayments), usdRate: Number(env.USD_RATE) || null,
     octo, payme, click, fiscal, testPayments, adminKey, adminTotp, mail,
-    telegramToken: env.TELEGRAM_BOT_TOKEN || null, pushContact: env.PUSH_CONTACT || (https ? publicUrl : "mailto:noreply@example.com"),
+    telegramToken: env.TELEGRAM_BOT_TOKEN || null, telegramBot: /^[A-Za-z0-9_]{5,32}$/.test(env.TELEGRAM_BOT_NAME ?? "") ? env.TELEGRAM_BOT_NAME : null, pushContact: env.PUSH_CONTACT || (https ? publicUrl : "mailto:noreply@example.com"),
     retentionDays: Math.max(30, Number(env.RETENTION_DAYS) || 365),
   };
 }

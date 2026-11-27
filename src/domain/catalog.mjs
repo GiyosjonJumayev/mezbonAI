@@ -3,7 +3,7 @@ import { buildListing } from "../ai/claude.mjs";
 import { missing, templateI18n } from "../ai/extract.mjs";
 import { CATEGORIES, LANGS, REGIONS } from "../lib/i18n.mjs";
 import { bad, fail, id, int, isDate, known, lang, notFound, str, today } from "../lib/util.mjs";
-import { cleanPricing, unitPrice } from "./pricing.mjs";
+import { cleanExtras, cleanPricing, unitPrice } from "./pricing.mjs";
 
 export const MAX_PHOTOS = 6;
 const OPEN = "l.status='published' AND h.suspended_at IS NULL";
@@ -16,11 +16,11 @@ const LISTING = `SELECT l.*, h.name host_name, h.demo host_demo, h.type host_typ
 
 export const publicListing = (r) => ({
   id: r.id, host_id: r.host_id, category: r.category, region: r.region, place: r.place, price_uzs: r.price_uzs, duration_min: r.duration_min,
-  capacity: r.capacity, weekdays: r.weekdays, times: r.times, i18n: r.i18n, photo: r.photos[0] ?? null, photos: r.photos, hosted: r.hosted, pricing: r.pricing,
+  capacity: r.capacity, weekdays: r.weekdays, times: r.times, i18n: r.i18n, photo: r.photos[0] ?? null, photos: r.photos, hosted: r.hosted, pricing: r.pricing, extras: r.extras, instant: r.instant, promoted: Boolean(r.promoted_until && new Date(r.promoted_until) > new Date()),
   host: r.host_name, host_type: r.host_type, verified: Boolean(r.host_verified), demo: r.host_demo,
   rating: r.rating == null ? null : Math.round(r.rating * 10) / 10, reviews: r.review_count,
 });
-export const hostListing = (r) => ({ ...publicListing(r), status: r.status, cert_no: r.cert_no, address: r.address, lat: r.lat, lng: r.lng, transcript: r.transcript, engine: r.engine, edited: r.edited, closed: r.closed, missing: missing(r) });
+export const hostListing = (r) => ({ ...publicListing(r), status: r.status, cert_no: r.cert_no, address: r.address, lat: r.lat, lng: r.lng, transcript: r.transcript, engine: r.engine, edited: r.edited, closed: r.closed, resell: r.resell, promoted_until: r.promoted_until, missing: missing(r) });
 
 /** How far ahead a card looks for the next free time. */
 const LOOK_AHEAD = 14;
@@ -85,6 +85,9 @@ export function createCatalog({ db, accounts, plans, events }) {
         [n.lat, n.lng] = p.point ? [Math.round(lat * 1e5) / 1e5, Math.round(lng * 1e5) / 1e5] : [null, null];
       }
       if ("pricing" in p) n.pricing = cleanPricing(p.pricing);
+      if ("extras" in p) n.extras = cleanExtras(p.extras);
+      if ("resell" in p) n.resell = p.resell === true;
+      if ("instant" in p) n.instant = p.instant === true;
       if ("cert_no" in p) n.cert_no = p.cert_no ? str(p.cert_no, "Sertifikat", 40) : null;
       if ("weekdays" in p) {
         if (!Array.isArray(p.weekdays) || !p.weekdays.length || p.weekdays.some((d) => !Number.isInteger(d) || d < 1 || d > 7)) throw bad("Kamida bitta ish kunini tanlang");
@@ -112,8 +115,8 @@ export function createCatalog({ db, accounts, plans, events }) {
       }
       const gaps = missing(n);
       if (l.status === "published" && gaps.length) throw bad(gaps[0].text);
-      await db.run("UPDATE listings SET category=?,region=?,place=?,price_uzs=?,duration_min=?,capacity=?,cert_no=?,weekdays=?,times=?,closed=?,i18n=?,edited=?,address=?,lat=?,lng=?,pricing=? WHERE id=?",
-        n.category, n.region, n.place, n.price_uzs, n.duration_min, n.capacity, n.cert_no ?? null, JSON.stringify(n.weekdays), JSON.stringify(n.times), JSON.stringify(n.closed), JSON.stringify(n.i18n), JSON.stringify(n.edited), n.address, n.lat, n.lng, JSON.stringify(n.pricing), l.id);
+      await db.run("UPDATE listings SET category=?,region=?,place=?,price_uzs=?,duration_min=?,capacity=?,cert_no=?,weekdays=?,times=?,closed=?,i18n=?,edited=?,address=?,lat=?,lng=?,pricing=?,extras=?,resell=?,instant=? WHERE id=?",
+        n.category, n.region, n.place, n.price_uzs, n.duration_min, n.capacity, n.cert_no ?? null, JSON.stringify(n.weekdays), JSON.stringify(n.times), JSON.stringify(n.closed), JSON.stringify(n.i18n), JSON.stringify(n.edited), n.address, n.lat, n.lng, JSON.stringify(n.pricing), JSON.stringify(n.extras), n.resell, n.instant, l.id);
     }),
 
     addPhoto: (credential, lid, file) => change(credential, lid, async ({ id: lid_, photos }) => {

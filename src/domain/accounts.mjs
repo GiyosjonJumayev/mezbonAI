@@ -105,6 +105,16 @@ export function createAccounts({ db, audit, site }) {
       await db.run("UPDATE hosts SET phone=? WHERE id=?", cleanPhone(phone), h.id);
       return { ok: true };
     },
+    /** The provider's bank details, for the payout list. Empty removes them. */
+    async setBank(credential, { account, mfo, holder } = {}) {
+      const h = await authHost(credential), a = String(account ?? "").replace(/\s/g, ""), m = String(mfo ?? "").replace(/\s/g, "");
+      if (!a && !m) { await db.run("UPDATE hosts SET bank_account=NULL, bank_mfo=NULL, bank_holder=NULL WHERE id=?", h.id); return { ok: true }; }
+      if (!/^\d{20}$/.test(a)) throw fail(400, "Hisob raqami 20 ta raqam bo‘lsin");
+      if (!/^\d{5}$/.test(m)) throw fail(400, "Bank kodi (MFO) 5 ta raqam bo‘lsin");
+      await db.run("UPDATE hosts SET bank_account=?, bank_mfo=?, bank_holder=? WHERE id=?", a, m, String(holder ?? "").trim().slice(0, 80) || h.name, h.id);
+      await audit("host", "bank_changed", h.id);
+      return { ok: true };
+    },
     /** An address counts only after its owner opened the link sent to it. An empty one removes it. */
     async askEmail(credential, value) {
       const h = await authHost(credential), email = cleanEmail(value);
@@ -125,7 +135,7 @@ export function createAccounts({ db, audit, site }) {
     async account(credential) {
       const h = await authHost(credential);
       return {
-        id: h.id, name: h.name, type: h.type, verified: Boolean(h.verified_at), suspended: Boolean(h.suspended_at), telegram: Boolean(h.telegram_chat), calendar: Boolean(h.calendar_hash), phone: h.phone, email: h.email,
+        id: h.id, name: h.name, type: h.type, verified: Boolean(h.verified_at), suspended: Boolean(h.suspended_at), telegram: Boolean(h.telegram_chat), calendar: Boolean(h.calendar_hash), phone: h.phone, email: h.email, bank: h.bank_account ? { account: h.bank_account, mfo: h.bank_mfo, holder: h.bank_holder } : null,
         sessions: await db.all("SELECT label, created_at FROM sessions WHERE host_id=? AND expires_at > now() ORDER BY created_at DESC", h.id),
         passkeys: await db.all("SELECT id, created_at FROM passkeys WHERE host_id=? ORDER BY created_at", h.id),
       };

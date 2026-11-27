@@ -1,4 +1,4 @@
-# SilkRoad Experience OS 8.0
+# SilkRoad Experience OS 12.0
 
 **AI-powered Tourism Business Operating System**
 
@@ -20,7 +20,35 @@ Oddiy marketplace emas. Bu mahalliy turizm bizneslarini raqamlashtiradigan, ular
    - Daromad, konversiya, eng band vaqtlar, kelmaganlar, CSV.
    - Narx taqqosi, javobsiz talab, turistlar qidirgan sanalar va tillar.
 
-## 8.0 da yangi
+## 12.0 da yangi
+
+- **Sovg‘a sertifikati**: tajribani sovg‘a qilish (`/?gift=1`). Chop etiladigan sovg‘a kartasi emailga keladi, kod bir yoki bir necha bronni to‘liq yoki qisman to‘laydi.
+- **Telegramda bron yangiliklari**: mehmon bitta tugma bilan bron haqidagi xabarlarni Telegramda o‘z tilida oladi.
+- **Hudud hisoboti**: `/panel` da har bir viloyat uchun chop etiladigan bitta sahifa: qidiruv, javobsiz talab, takliflar, bronlar va daromad.
+- **Bank orqali to‘lov**: mezbon hisob raqami va MFO ni kiritadi; ma’mur bankka CSV ro‘yxat yuklaydi va bir bosishda to‘langan deb belgilaydi.
+
+## 11.0 da
+
+- **Mavzu sahifalari**: “Ipak yo‘li hunarlari”, “O‘zbek dasturxoni”, “Qishloq hayoti”, “Farg‘ona vodiysi”, “Ikki soatgacha”. Har biri Google va ulashilgan havolalar uchun alohida sahifa.
+- **Pullik reklama**: mezbon 99 000 so‘mga taklifini 7 kun qidiruv boshida ko‘rsatadi. Har doim “Reklama” belgisi bilan.
+- **Do‘stga 10%, sizga 10%**: to‘lagan mehmon kod oladi; do‘sti 10% arzon bron qiladi, mehmon esa keyingi bron uchun 10% chegirma oladi.
+- **Guruh va alohida tashrif**: mehmon narx so‘raydi, mezbon kabinetda vaqt va bitta narx yozadi, mehmon shu narxda bron qiladi va to‘laganda bron o‘zi tasdiqlanadi.
+
+## 10.0 da
+
+- **Qidiruv va ulashilgan havolalar**: har bir taklif sahifasida sarlavha, tavsif, rasm, narx va baho Google va Telegram, WhatsApp, Instagram uchun, 10 tilda. Sayt xaritasi (sitemap).
+- **Promo kodlar**: mehmonxona, gid, bloger va kampaniyalar uchun. Chegirmani platforma o‘z ulushidan to‘laydi: mezbon daromadi o‘zgarmaydi.
+- **To‘lanmagan bronni qaytarish**: joy hali bo‘sh bo‘lsa, mehmonga bir marta xat.
+- **Tashrifdan keyin**: baho so‘rash va yaqin atrofdagi yana uchta taklif.
+- **Darhol tasdiqlash**: mezbon xohlasa, to‘langan bron o‘zi tasdiqlanadi.
+
+## 9.0 da
+
+- **Sotuv hamkorlari (OCTO standarti)**: turoperator, mehmonxona va bron saytlari o‘z kaliti bilan sotadi.
+- **Qo‘shimcha xizmatlar**: transfer, tushlik, buyumni qadoqlash, suratlar.
+- **O‘z saytingizga bron oynasi**.
+
+## 8.0 da
 
 - **Hammasi jonli**: bo‘sh joy, taklif, bron, talab paneli va ta’sir sahifasi ochiq ekranda o‘zi yangilanadi. Oqimda shaxsiy ma’lumot yo‘q.
 - **Tezkor qidiruv**: har bir harfdan keyin natija, 10 tilda; tur va hudud bo‘yicha son, tezkor kunlar, narx chegarasi. Kun band bo‘lsa, yaqin bo‘sh kunlar taklif qilinadi.

@@ -1,6 +1,7 @@
 // The money side: bills, fulfilment, refunds and the provider payout ledger.
 // Card data never reaches this server: guests pay on the payment company's own page.
 import { ago, fail, id, str, tashkentNow } from "../lib/util.mjs";
+import { BOOST } from "../domain/plans.mjs";
 import { clickLink, createClick, createClickApi } from "./click.mjs";
 import { createOcto } from "./octo.mjs";
 import { checkoutLink, createPayme } from "./payme.mjs";
@@ -9,7 +10,7 @@ const MAX_ATTEMPTS = 8;
 /** A trip is refunded booking by booking, so it needs a company that can send part of a payment back. */
 const PARTIAL = ["octo", "test"];
 
-export function createPayments({ db, config, fetchFn, accounts, bookings, plans, audit }) {
+export function createPayments({ db, config, fetchFn, accounts, catalog, bookings, plans, vouchers, events, audit }) {
   const { octo, payme, click, publicUrl, testPayments } = config;
   const octoApi = octo && createOcto({ octo, fiscal: config.fiscal, publicUrl, fetchFn });
   const clickApi = click && createClickApi({ click, fetchFn });
@@ -22,6 +23,8 @@ export function createPayments({ db, config, fetchFn, accounts, bookings, plans,
     if (p.fulfilled_at) return;
     await db.run("UPDATE payments SET fulfilled_at=now(), updated_at=now() WHERE id=?", p.id);
     if (p.kind === "plan") return plans.activatePlan(p.ref, p);
+    if (p.kind === "voucher") { const v = await vouchers.activateVoucher(p.ref); if (v) events.emit("voucher", { token: v.token }); return; }
+    if (p.kind === "boost") return db.run(`UPDATE listings SET promoted_until = GREATEST(now(), COALESCE(promoted_until, now())) + make_interval(days => ?) WHERE id=?`, BOOST.days, p.ref);
     for (const { booking_id: bid } of await db.all("SELECT booking_id FROM payment_items WHERE payment_id=? ORDER BY booking_id", p.id)) {
       // markPaid queues on the listing, so the duplicate check below cannot race with another payment for this booking.
       if ((await bookings.markPaid(bid)) === "late") await dueRefund(p.id, bid, "Joy band bo‘lib qolgan");
@@ -72,7 +75,7 @@ export function createPayments({ db, config, fetchFn, accounts, bookings, plans,
     if (!r) return;
     const p = await get(r.payment_id);
     try {
-      if (p.provider === "test" || p.provider === "credit") await finishRefund(rid, "system");
+      if (["test", "credit", "reseller", "voucher"].includes(p.provider)) await finishRefund(rid, "system"); // a reseller is simply not charged; a voucher gets its part back below
       else if (p.provider === "octo" && octoApi) {
         // Look first: an earlier attempt may have worked although its answer was lost.
         const before = (await db.one("SELECT COALESCE(SUM(amount_uzs),0) n FROM refunds WHERE payment_id=? AND status='done'", p.id)).n;
@@ -127,7 +130,7 @@ export function createPayments({ db, config, fetchFn, accounts, bookings, plans,
 
   /** What the Payme and Click protocols need to know. They run inside the protocol's own transaction. */
   const hooks = {
-    canPay: async (p) => p.kind === "plan" || bookings.canPay(p.ref),
+    canPay: async (p) => ["plan", "boost"].includes(p.kind) || (p.kind === "voucher" ? Boolean(await db.one("SELECT 1 x FROM vouchers WHERE id=? AND status='unpaid'", p.ref)) : bookings.canPay(p.ref)),
     extendHold: async (p) => { if (p.kind === "booking") await bookings.extendHold(p.ref); },
     settle: (p) => settle(p.id),
     canRefund: async (p) => p.kind === "booking" && bookings.canRefund(p.ref),
@@ -135,9 +138,29 @@ export function createPayments({ db, config, fetchFn, accounts, bookings, plans,
   };
   const api = {
     methods, get,
+    /** A reseller sold it and pays on its statement. Recorded as paid now, so the provider sees and accepts it as any other booking. */
+    async settleReseller(bid, resellerId) {
+      const b = await db.one("SELECT id, total_uzs FROM bookings WHERE id=?", bid), p = await bill("booking", bid, "reseller", b.total_uzs, { reseller: resellerId }, [b]);
+      await settle(p.id);
+    },
     async startBooking(token, provider) {
       const b = await bookings.forPayment(token);
-      return start("booking", b.id, provider, { amount: b.total_uzs, lang: b.lang, title: b.title, items: [b], returnUrl: `${publicUrl}/?b=${token}&lang=${b.lang}` });
+      // Check the gift balance before anything is charged; markPaid checks again, so a race still cannot spend it twice.
+      if (b.voucher_uzs > 0 && !(await vouchers.covers(b.id))) throw fail(409, "Sovg‘a kodi qoldig‘i yetmaydi", "voucher");
+      if (provider === "voucher") { // the voucher pays everything: no payment page at all
+        if (b.due_uzs > 0) throw fail(400, "Sovg‘a kodi butun narxni qoplamaydi", "pay");
+        await settle((await bill("booking", b.id, "voucher", b.total_uzs, {}, [b])).id);
+        return { done: true };
+      }
+      if (b.due_uzs <= 0) throw fail(400, "Bu bron sovg‘a kodi bilan to‘lanadi", "pay");
+      return start("booking", b.id, provider, { amount: b.due_uzs, lang: b.lang, title: b.title, items: [{ id: b.id, total_uzs: b.due_uzs }], returnUrl: `${publicUrl}/?b=${token}&lang=${b.lang}` });
+    },
+    /** A gift voucher is bought like anything else; it becomes usable once paid. */
+    async startVoucher(token, provider) {
+      const v = await db.one("SELECT * FROM vouchers WHERE token=?", String(token ?? ""));
+      if (!v) throw fail(404, "Sovg‘a topilmadi", "notfound");
+      if (v.status !== "unpaid") throw fail(409, "Sovg‘a allaqachon to‘langan", "state");
+      return start("voucher", v.id, provider, { amount: v.amount_uzs, lang: v.lang, title: "SilkRoad gift voucher", returnUrl: `${publicUrl}/?giftcard=${token}&lang=${v.lang}` });
     },
     /** One payment for every booking of a trip that still waits for money. */
     tripMethods: () => methods().filter((m) => PARTIAL.includes(m)),
@@ -148,6 +171,12 @@ export function createPayments({ db, config, fetchFn, accounts, bookings, plans,
       const items = await Promise.all(waiting.map((b) => bookings.forPayment(b.token)));
       items.sort((a, b) => a.id.localeCompare(b.id));
       return start("trip", trip.id, provider, { amount: items.reduce((n, b) => n + b.total_uzs, 0), lang: trip.lang, title: `SilkRoad trip (${items.length})`, items, meta: { bookings: items.map((b) => b.id) }, returnUrl: `${publicUrl}/?trip=${trip.token}&lang=${trip.lang}` });
+    },
+    /** A week at the top of search for one published offer. */
+    async startBoost(credential, lid, provider) {
+      const l = await catalog.ownListing(credential, lid);
+      if (l.status !== "published") throw fail(409, "Avval taklifni e’lon qiling", "state");
+      return start("boost", l.id, provider, { amount: BOOST.price, lang: "uz", title: "SilkRoad: tavsiya", returnUrl: `${publicUrl}/mezbon#takliflar` });
     },
     async startPlan(credential, plan, provider) {
       const { hostId, quote } = await plans.planQuote(credential, plan);
@@ -182,6 +211,7 @@ export function createPayments({ db, config, fetchFn, accounts, bookings, plans,
     /** Called when a paid booking is cancelled in time, declined or not answered. */
     async refundBooking(bookingId, why) {
       for (const p of await db.all("SELECT p.id FROM payment_items i JOIN payments p ON p.id=i.payment_id WHERE i.booking_id=? AND p.status='paid'", bookingId)) await dueRefund(p.id, bookingId, why);
+      await vouchers.returnVoucher(bookingId); // the voucher's part goes back to the voucher, not to a card
     },
     refundsDue: () => db.all("SELECT r.id, r.payment_id, p.provider, r.amount_uzs, p.amount_uzs payment_uzs, COALESCE(r.problem, r.reason) note, r.attempts, r.created_at FROM refunds r JOIN payments p ON p.id=r.payment_id WHERE r.status='due' ORDER BY r.no LIMIT 200"),
     /** An administrator confirms a refund made in the payment company's own cabinet. */
@@ -207,6 +237,13 @@ export function createPayments({ db, config, fetchFn, accounts, bookings, plans,
           AND NOT EXISTS (SELECT 1 FROM refunds r WHERE r.payment_id=p.id AND r.booking_id=b.id))`, cut, cut, hostId, testPayments);
       const paid = (await db.one("SELECT COALESCE(SUM(amount_uzs),0) n FROM payouts WHERE host_id=?", hostId)).n;
       return { available: Math.max(0, r.earned - paid), upcoming: r.upcoming, paid_out: paid, payouts: await db.all("SELECT id, amount_uzs, reference, created_at FROM payouts WHERE host_id=? ORDER BY created_at DESC LIMIT 24", hostId) };
+    },
+    /** Every provider with money to receive, and where it goes. */
+    async payoutList() {
+      const hosts = await db.all("SELECT id, name, bank_account, bank_mfo, bank_holder FROM hosts WHERE NOT demo AND NOT stage ORDER BY name");
+      const out = [];
+      for (const h of hosts) { const b = await api.balance(h.id); if (b.available > 0) out.push({ id: h.id, name: h.name, holder: h.bank_holder, account: h.bank_account, mfo: h.bank_mfo, amount_uzs: b.available }); }
+      return out;
     },
     async hostBalance(credential) { return api.balance((await accounts.authHost(credential)).id); },
     /** Records a transfer the administrator has already made at the bank. This server moves no money. */

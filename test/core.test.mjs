@@ -14,8 +14,9 @@ test("all strings exist in all languages", () => {
 });
 
 test("split always adds up", () => {
-  for (const c of ["web", "hotel", "ai"]) for (const t of [1000, 333333, 150001]) { const s = split(t, c); assert.equal(s.platform + s.hotel + s.host, t); }
-  assert.deepEqual(split(300000, "hotel"), { total: 300000, platform: 36000, hotel: 24000, host: 240000 });
+  for (const c of ["web", "hotel", "ai", "widget", "partner"]) for (const t of [1000, 333333, 150001]) for (const pct of [0, 10, 25]) { const s = split(t, c, "free", c === "partner" ? pct : 0); assert.equal(s.platform + s.hotel + s.partner + s.host, t); assert.ok(s.host >= 0); }
+  assert.deepEqual(split(300000, "hotel"), { total: 300000, platform: 36000, hotel: 24000, partner: 0, host: 240000 });
+  assert.deepEqual(split(300000, "partner", "free", 10), { total: 300000, platform: 36000, hotel: 0, partner: 30000, host: 234000 });
 });
 
 test("a draft is invisible until published, and has 10 languages", async () => {
@@ -82,13 +83,17 @@ test("capacity, schedule and date rules", async () => {
   await status(() => core.book(req(l)), 409);
 });
 
-test("an expired hold cannot be paid", async () => {
+test("an expired hold is paid only while its place is still free, and is never charged for a place that is gone", async () => {
   const { payTest, db, core, host, l } = await setup();
   await core.publish(host.key, l.id);
-  const b = await core.book(req(l));
+  const late = await core.book(req(l, { guests: 2 })), gone = await core.book(req(l, { guests: 2, time: "15:00" }));
   await db.run("UPDATE bookings SET expires_at='2020-01-01T00:00:00Z'");
-  await status(() => payTest(b.token), 410);
-  assert.equal((await core.guestBooking(b.token)).status, "expired");
+  assert.deepEqual([(await core.guestBooking(late.token)).status, (await core.guestBooking(late.token)).can_revive], ["expired", true]);
+  await payTest((await core.book(req(l, { guests: 4, time: "15:00" }))).token); // someone else takes every place at 15:00
+  await status(() => payTest(gone.token), 410);
+  assert.equal((await core.guestBooking(gone.token)).can_revive, false);
+  assert.equal((await payTest(late.token)).status, "paid", "the place at 10:00 was still free");
+  assert.equal((await db.one("SELECT COUNT(*) n FROM payments WHERE amount_uzs > 0 AND status='paid'")).n, 2);
 });
 
 test("chat: phrases translate exactly, free text offline is marked untranslated", async () => {

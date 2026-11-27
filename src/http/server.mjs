@@ -5,7 +5,9 @@ import QRCode from "qrcode";
 import { adminSessions } from "../domain/admin.mjs";
 import { fail } from "../lib/util.mjs";
 import { checkOrigin, clientIp, cookie, cookies, limiter, readBody, readJson, secureHeaders, toAppError } from "./guard.mjs";
+import { createOctoApi } from "./octo.mjs";
 import { createRoutes } from "./routes.mjs";
+import { createSeo } from "./seo.mjs";
 import { createStatic } from "./static.mjs";
 
 const device = (ua = "") => [/Edg/.test(ua) ? "Edge" : /Firefox/.test(ua) ? "Firefox" : /Chrome/.test(ua) ? "Chrome" : /Safari/.test(ua) ? "Safari" : "Brauzer", /Android/.test(ua) ? "Android" : /iPhone|iPad/.test(ua) ? "iOS" : /Windows/.test(ua) ? "Windows" : /Mac/.test(ua) ? "Mac" : ""].filter(Boolean).join(", ");
@@ -13,7 +15,7 @@ const device = (ua = "") => [/Edg/.test(ua) ? "Edge" : /Firefox/.test(ua) ? "Fir
 export function createHttp(app) {
   const { core, payments, config, live } = app;
   const photos = path.join(config.dataDir, "photos");
-  const routes = createRoutes({ ...app, photos }), serve = createStatic({ photos }), admins = adminSessions(config.adminKey, config.adminTotp);
+  const octo = createOctoApi(app), routes = createRoutes({ ...app, photos }), seo = createSeo(app), serve = createStatic({ photos, page: seo.page }), admins = adminSessions(config.adminKey, config.adminTotp);
   const streams = new Map(); // host id → Set of open event streams
   const limitWrite = limiter(90, 60e3), limitPayCallback = limiter(1200, 60e3), limitRead = limiter(600, 60e3);
   const SESSION = config.https ? "__Host-sr" : "sr", ADMIN = config.https ? "__Host-sra" : "sra";
@@ -27,6 +29,10 @@ export function createHttp(app) {
     try {
       const url = new URL(req.url, "http://x"), { pathname } = url, ip = clientIp(req, config.trustProxy);
 
+      // Resellers: their own key, no cookies, their own error format.
+      if (pathname.startsWith("/octo/")) return await octo(req, res, pathname.slice(5), url.searchParams);
+      // A provider's own website may show the booking box of one offer. Provider cookies are SameSite=Strict, so a framing site can never act for them.
+      if (pathname === "/" && url.searchParams.get("embed") === "1") res.setHeader("Content-Security-Policy", res.getHeader("Content-Security-Policy").replace(/frame-ancestors '[a-z]+'/, "frame-ancestors *"));
       // Payment companies: they have their own authentication and no cookies.
       if (pathname.startsWith("/pay/") && req.method === "POST") {
         limitPayCallback(ip);
@@ -102,7 +108,13 @@ export function createHttp(app) {
         throw fail(404, "Topilmadi", "notfound");
       }
       if (req.method !== "GET" && req.method !== "HEAD") throw fail(405, "Ruxsat yo‘q");
-      await serve(req, res, pathname);
+      if (pathname === "/sitemap.xml" || pathname === "/robots.txt") {
+        limitRead(ip);
+        const xml = pathname === "/sitemap.xml";
+        res.writeHead(200, { "Content-Type": xml ? "application/xml; charset=utf-8" : "text/plain; charset=utf-8", "Cache-Control": "public, max-age=3600" });
+        return res.end(xml ? await seo.sitemap() : seo.robots());
+      }
+      await serve(req, res, pathname, url.searchParams);
     } catch (e) {
       const known = toAppError(e);
       if (!known) console.error(e);

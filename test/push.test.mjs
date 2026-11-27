@@ -38,19 +38,21 @@ test("subscriptions are validated, owned, capped and can be removed", async () =
 test("provider and guest are told about the right things in the right language", async () => {
   const { push, core, host, book, accept, sent } = await setup();
   await push.subscribe("host", host.id, sub("host"));
+  // Notifications leave after the data is saved; wait for each one instead of guessing how long that takes.
+  const arrived = async (n) => { for (let i = 0; i < 100 && sent.length < n; i++) await tick(20); assert.equal(sent.length, n, "notification sent"); };
   const b = await book();
   await push.subscribe("guest", await core.bookingId(b.token), sub("guest"));
-  await tick();
+  await arrived(1);
   assert.deepEqual([sent[0].to.endsWith("/host"), sent[0].body.title], [true, "Yangi bron"]);
   await accept();
-  await tick();
+  await arrived(2);
   assert.deepEqual([sent[1].to.endsWith("/guest"), sent[1].body.body], [true, UI.confirmed.zh]);
   assert.ok(sent[1].body.url.includes(b.token));
   await core.message("host", host.key, { booking_id: await core.bookingId(b.token), code: "r_yes" });
-  await tick();
+  await arrived(3);
   assert.equal(sent[2].body.body, "可以，欢迎！");
   await core.cancel(b.token);
-  await tick();
+  await arrived(4);
   assert.equal(sent[3].body.title, "Bron bekor qilindi");
   // Encrypted for the browser, signed by this server, and nothing readable on the wire.
   assert.match(sent[0].request.headers.Authorization, /^vapid /);

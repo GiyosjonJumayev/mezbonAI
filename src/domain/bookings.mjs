@@ -6,7 +6,7 @@ import { bad, fail, id, int, lang, notFound, secret, startsAt, str, tashkentNow,
 import { cleanEmail, cleanPhone } from "./mail.mjs";
 import { hostListing } from "./catalog.mjs";
 import { effectivePlan, split } from "./plans.mjs";
-import { unitPrice } from "./pricing.mjs";
+import { extrasCost, unitPrice } from "./pricing.mjs";
 
 export const HOLD_MIN = 30;
 export const CANCEL_HOURS = 24;
@@ -27,9 +27,9 @@ function ics(list) {
   return ["BEGIN:VCALENDAR", "VERSION:2.0", "PRODID:-//SilkRoad Experience OS//EN", ...list.flatMap(event), "END:VCALENDAR", ""].join("\r\n");
 }
 
-export function createBookings({ db, events, accounts, catalog, availability, plans, refunds }) {
-  const BOOKING = `SELECT b.*, l.host_id, l.i18n, l.place, l.region, l.category, l.photos->>0 photo, l.duration_min, l.address, l.lat, l.lng, h.name host_name, h.phone host_phone, h.email host_email, ho.name hotel_name, r.rating review_rating, tr.token trip_token
-    FROM bookings b JOIN listings l ON l.id=b.listing_id JOIN hosts h ON h.id=l.host_id LEFT JOIN hotels ho ON ho.code=b.hotel_code LEFT JOIN reviews r ON r.booking_id=b.id LEFT JOIN trips tr ON tr.id=b.trip_id`;
+export function createBookings({ db, events, accounts, catalog, availability, plans, refunds, promos, vouchers }) {
+  const BOOKING = `SELECT b.*, l.host_id, l.i18n, l.place, l.region, l.category, l.photos->>0 photo, l.duration_min, l.instant, pc.ref_booking promo_ref, pc.owner_email promo_owner, l.address, l.lat, l.lng, h.name host_name, h.phone host_phone, h.email host_email, ho.name hotel_name, rs.name reseller_name, r.rating review_rating, tr.token trip_token
+    FROM bookings b JOIN listings l ON l.id=b.listing_id JOIN hosts h ON h.id=l.host_id LEFT JOIN hotels ho ON ho.code=b.hotel_code LEFT JOIN resellers rs ON rs.id=b.reseller_id LEFT JOIN promo_codes pc ON pc.code=b.promo_code LEFT JOIN reviews r ON r.booking_id=b.id LEFT JOIN trips tr ON tr.id=b.trip_id`;
   const byId = (bid) => db.one(`${BOOKING} WHERE b.id=?`, String(bid ?? ""));
   async function guestOwn(token) {
     const b = typeof token === "string" ? await db.one(`${BOOKING} WHERE b.token=?`, token) : null;
@@ -51,7 +51,7 @@ export function createBookings({ db, events, accounts, catalog, availability, pl
     byId,
     async hostHome(credential) {
       const h = await accounts.authHost(credential);
-      const rows = await db.all(`SELECT b.id, b.date, b.time, b.guests, b.guest_name, b.lang, b.channel, b.status, b.host_uzs, b.total_uzs, b.created_at, b.checked_in_at, b.moved_at, b.decide_by, CASE WHEN b.status IN ('paid','confirmed') THEN b.guest_phone END guest_phone, l.i18n->'uz'->>'title' title, l.id listing_id
+      const rows = await db.all(`SELECT b.id, b.date, b.time, b.guests, b.guest_name, b.lang, b.channel, b.status, b.host_uzs, b.total_uzs, b.extras, b.created_at, b.checked_in_at, b.moved_at, b.decide_by, CASE WHEN b.status IN ('paid','confirmed') THEN b.guest_phone END guest_phone, l.i18n->'uz'->>'title' title, l.id listing_id
         FROM bookings b JOIN listings l ON l.id=b.listing_id WHERE l.host_id=? AND b.status<>'pending' AND NOT (b.status='cancelled' AND b.expires_at IS NOT NULL)
         ORDER BY b.status='paid' DESC, (b.date >= ?) DESC, b.date, b.time LIMIT 100`, h.id, today());
       const sums = await db.one(`SELECT COALESCE(SUM(b.host_uzs) FILTER (WHERE b.status='confirmed'),0) earned, COALESCE(SUM(b.guests) FILTER (WHERE b.status='confirmed'),0) guests, COUNT(*) FILTER (WHERE b.status='paid') waiting
@@ -66,29 +66,40 @@ export function createBookings({ db, events, accounts, catalog, availability, pl
       };
     },
 
-    async book(p) {
+    /** `via` is set by the server itself, never by a visitor: a reseller and its hold, or nothing. */
+    async book(p, via = {}) {
       const l = await catalog.published(p.listing_id), { date } = p, time = String(p.time ?? "");
       availability.check(l, date, time);
-      const guests = int(p.guests, "Mehmonlar soni", 1, 100);
+      const guests = int(p.guests, "Mehmonlar soni", 1, via.quote ? 300 : 100);
       const name = str(p.guest_name, "Ism", 80), email = cleanEmail(p.email), phone = cleanPhone(p.phone);
       const hotel = await catalog.hotel(p.hotel_code);
-      const channel = p.source === "ai" ? "ai" : hotel ? "hotel" : "web";
+      const channel = via.reseller ? "partner" : p.source === "ai" ? "ai" : hotel ? "hotel" : p.source === "widget" ? "widget" : "web";
       const b = { id: id("b_"), token: secret() };
       await db.tx(async () => {
         await availability.lock(l.id);
         const fresh = await catalog.published(l.id); // price and schedule as they are now that we hold the lock
         availability.check(fresh, date, time);
         const rule = (await db.one("SELECT capacity FROM slot_rules WHERE listing_id=? AND date=? AND time=?", l.id, date, time))?.capacity ?? 0;
-        int(guests, "Mehmonlar soni", 1, Math.max(fresh.capacity, rule));
-        if ((await availability.free(fresh, date, time)) < guests) throw fail(409, "Bu vaqtda joy yetarli emas", "full");
+        // A quote is the provider's own yes to this group at this time, so the usual size limit does not apply.
+        if (!via.quote) {
+          int(guests, "Mehmonlar soni", 1, Math.max(fresh.capacity, rule));
+          if ((await availability.free(fresh, date, time)) < guests) throw fail(409, "Bu vaqtda joy yetarli emas", "full");
+        }
         // The price can change while the guest fills in the form. A lower one is simply charged; a higher one needs a new yes.
-        const total = unitPrice(fresh, date, time, guests).unit * guests;
+        const extras = extrasCost(fresh, Array.isArray(p.extras) ? p.extras.filter((x) => typeof x === "string") : [], guests);
+        if (Array.isArray(p.extras) && extras.items.length !== new Set(p.extras).size) throw fail(409, "Bu qo‘shimcha xizmat endi yo‘q", "price");
+        const gross = via.quote ? via.quote.total : unitPrice(fresh, date, time, guests).unit * guests + extras.total;
+        // A promo code lowers the price and the platform's share by the same amount; the provider's share stays.
+        const promo = p.promo && !via.reseller ? await promos.applyPromo(p.promo, fresh, gross) : null, total = gross - (promo?.discount ?? 0);
         if (Number.isInteger(p.expect_uzs) && total > p.expect_uzs) throw fail(409, "Narx o‘zgardi. Yangi narxni ko‘ring", "price");
-        const s = split(total, channel, effectivePlan({ plan: fresh.host_plan, plan_until: fresh.host_plan_until }));
-        await db.run(`INSERT INTO bookings (id,token,listing_id,date,time,guests,guest_name,lang,channel,hotel_code,status,total_uzs,platform_uzs,hotel_uzs,host_uzs,expires_at,trip_id,guest_email,guest_phone)
-          VALUES (?,?,?,?,?,?,?,?,?,?,'pending',?,?,?,?,?,?,?,?)`,
+        const s = split(gross, channel, effectivePlan({ plan: fresh.host_plan, plan_until: fresh.host_plan_until }), via.reseller?.pct ?? 0);
+        if (promo) { s.total = total; s.platform -= promo.discount; }
+        // A gift voucher pays part or all of the price. Nothing is taken from it until the booking is paid.
+        const gift = p.voucher && !via.reseller && !via.quote ? await vouchers.voucherFor(p.voucher, total) : null;
+        await db.run(`INSERT INTO bookings (id,token,listing_id,date,time,guests,guest_name,lang,channel,hotel_code,status,total_uzs,platform_uzs,hotel_uzs,host_uzs,expires_at,trip_id,guest_email,guest_phone,partner_uzs,reseller_id,reseller_uuid,extras,extras_uzs,promo_code,discount_uzs,quoted,voucher_id,voucher_uzs)
+          VALUES (?,?,?,?,?,?,?,?,?,?,'pending',?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
           b.id, b.token, l.id, date, time, guests, name, lang(p.lang), channel, channel === "hotel" ? hotel.code : null,
-          s.total, s.platform, s.hotel, s.host, new Date(Date.now() + HOLD_MIN * 60e3).toISOString(), p.trip_id ?? null, email, phone);
+          s.total, s.platform, s.hotel, s.host, new Date(Date.now() + (via.hold ?? HOLD_MIN) * 60e3).toISOString(), p.trip_id ?? null, email, phone, s.partner, via.reseller?.id ?? null, via.uuid ?? null, JSON.stringify(extras.items), extras.total, promo?.code ?? null, promo?.discount ?? 0, Boolean(via.quote), gift?.id ?? null, gift?.amount ?? 0);
         changed({ id: b.id, listing_id: l.id });
       });
       return api.guestBooking(b.token);
@@ -101,12 +112,12 @@ export function createBookings({ db, events, accounts, catalog, availability, pl
         token: b.token, trip: b.trip_token, listing_id: b.listing_id, i18n: b.i18n, place: b.place, region: b.region, category: b.category, photo: b.photo, duration_min: b.duration_min,
         date: b.date, time: b.time, guests: b.guests, guest_name: b.guest_name, lang: b.lang, channel: b.channel, hotel: b.hotel_name,
         status: isExpired(b) ? "expired" : b.status, expires_at: b.status === "pending" ? b.expires_at : null, decide_by: b.status === "paid" ? b.decide_by : null,
-        total_uzs: b.total_uzs, platform_uzs: b.platform_uzs, hotel_uzs: b.hotel_uzs, host_uzs: b.host_uzs,
+        total_uzs: b.total_uzs, platform_uzs: b.platform_uzs, hotel_uzs: b.hotel_uzs, host_uzs: b.host_uzs, partner_uzs: b.partner_uzs, reseller: b.reseller_name, discount_uzs: b.discount_uzs, promo: b.promo_code, instant: b.instant, quoted: b.quoted, voucher_uzs: b.voucher_uzs, due_uzs: b.total_uzs - b.voucher_uzs, telegram: Boolean(b.guest_chat), extras: b.extras, extras_uzs: b.extras_uzs,
         has_email: Boolean(b.guest_email),
         // The door and the phone number are for guests who are really coming.
         meet: b.status === "confirmed" ? { host: b.host_name, address: b.address, phone: b.host_phone, lat: b.lat, lng: b.lng } : null,
         ticket: b.status === "confirmed" ? { code: b.ticket_code, used_at: b.checked_in_at } : null,
-        can_cancel: canCancel(b), can_move: b.status !== "pending" && canCancel(b), can_review: Boolean(canReview(b)), my_rating: b.review_rating,
+        can_revive: isExpired(b) && (await canRevive(b)), can_cancel: canCancel(b), can_move: b.status !== "pending" && canCancel(b), can_review: Boolean(canReview(b)), my_rating: b.review_rating,
         payment: await refunds.summary(b.id), messages: await msgs(b.id),
       };
     },
@@ -206,6 +217,39 @@ export function createBookings({ db, events, accounts, catalog, availability, pl
       return Promise.all(ids.map((r) => byId(r.id)));
     },
 
+    /** Holds that ran out unpaid in the last two days, with an e-mail, for a visit still ahead. Each is returned once, and only while its place is free. */
+    async takeRecalls() {
+      const rows = await db.all(`UPDATE bookings SET recalled_at=now() WHERE id IN (SELECT b.id FROM bookings b WHERE b.status='pending' AND b.channel<>'partner' AND b.trip_id IS NULL AND b.recalled_at IS NULL AND b.guest_email IS NOT NULL
+        AND b.expires_at < now() - interval '15 minutes' AND b.expires_at > now() - interval '2 days' AND b.date >= ?
+        AND NOT EXISTS (SELECT 1 FROM bookings o WHERE o.listing_id=b.listing_id AND lower(o.guest_email)=lower(b.guest_email) AND o.id<>b.id AND o.status IN ('paid','confirmed') AND o.created_at >= b.created_at)
+        LIMIT 100 FOR UPDATE SKIP LOCKED) RETURNING id`, today());
+      const out = [];
+      for (const { id: bid } of rows) { const b = await byId(bid); if (b && (await canRevive(b))) out.push(b); }
+      return out;
+    },
+    /** Visits that ended three hours ago or more, in the last week, not yet reviewed. Each is returned once. */
+    async takeFollowups() {
+      const clock = tashkentNow().slice(0, 16);
+      const rows = await db.all(`UPDATE bookings SET followed_at=now() WHERE id IN (SELECT b.id FROM bookings b JOIN listings l ON l.id=b.listing_id WHERE b.status='confirmed' AND b.followed_at IS NULL AND b.guest_email IS NOT NULL
+        AND b.date + b.time::time + make_interval(mins => l.duration_min + 180) <= ?::timestamp AND b.date >= ?::date - 7
+        AND NOT EXISTS (SELECT 1 FROM reviews r WHERE r.booking_id=b.id) LIMIT 100 FOR UPDATE SKIP LOCKED) RETURNING id`, clock, today());
+      return Promise.all(rows.map((r) => byId(r.id)));
+    },
+    /** A link that connects this booking to the guest's Telegram, so updates arrive there. */
+    async telegramCode(token) {
+      const b = await guestOwn(token);
+      if (b.tg_code) return b.tg_code;
+      const code = secret().slice(0, 24).replace(/[^A-Za-z0-9]/g, "x");
+      await db.run("UPDATE bookings SET tg_code=COALESCE(tg_code, ?) WHERE id=?", code, b.id);
+      return (await db.one("SELECT tg_code FROM bookings WHERE id=?", b.id)).tg_code;
+    },
+    /** Called by the bot when the guest opens that link. */
+    async linkGuestChat(code, chat) {
+      const b = typeof code === "string" ? await db.one(`${BOOKING} WHERE b.tg_code=?`, code) : null;
+      if (!b) return null;
+      await db.run("UPDATE bookings SET guest_chat=? WHERE id=?", String(chat), b.id);
+      return b;
+    },
     /** iCalendar file for a paid or confirmed booking. */
     async calendar(token) {
       const b = await guestOwn(token);
@@ -243,8 +287,9 @@ export function createBookings({ db, events, accounts, catalog, availability, pl
     async forPayment(token) {
       const b = await guestOwn(token);
       if (b.status !== "pending") throw fail(409, "Bu bron to‘lov kutmayapti", "state");
-      if (isExpired(b)) throw fail(410, "Bron muddati tugagan", "expired");
-      return { id: b.id, total_uzs: b.total_uzs, lang: b.lang, title: b.i18n[b.lang]?.title ?? b.i18n.en.title };
+      // An expired hold may still be paid while its place is free: the guest gets a fresh half hour.
+      if (isExpired(b)) { if (!(await canRevive(b))) throw fail(410, "Bron muddati tugagan", "expired"); await api.extendHold(b.id); }
+      return { id: b.id, total_uzs: b.total_uzs, voucher_uzs: b.voucher_uzs, due_uzs: b.total_uzs - b.voucher_uzs, lang: b.lang, title: b.i18n[b.lang]?.title ?? b.i18n.en.title };
     },
     /** Whether money for this booking can still be accepted. An expired hold is fine while the place is free. */
     async canPay(bid) {
@@ -262,6 +307,14 @@ export function createBookings({ db, events, accounts, catalog, availability, pl
       const b = await byId(bid);
       if (b.status === "paid" || b.status === "confirmed") return "paid";
       if (b.status !== "pending" || (isExpired(b) && !(await canRevive(b)))) return "late";
+      if (!(await vouchers.takeVoucher(b))) return "late"; // the voucher was spent elsewhere meanwhile: the money goes back
+      await rewardReferrer(b);
+      if (b.instant || b.quoted) { // the provider chose to accept every paid booking at once, or already agreed to this quote
+        await db.run("UPDATE bookings SET status='confirmed', expires_at=NULL, decide_by=NULL, asked_at=now(), decided_at=now(), ticket_code=? WHERE id=?", newTicketCode(), bid);
+        toHost(b, "booking");
+        toGuest(b, "confirmed");
+        return "paid";
+      }
       await db.run("UPDATE bookings SET status='paid', expires_at=NULL, decide_by=?, asked_at=now() WHERE id=?", decideBy(b.date, b.time), bid);
       toHost(b, "booking");
       toGuest(b, "paid");
@@ -279,6 +332,12 @@ export function createBookings({ db, events, accounts, catalog, availability, pl
       if (r.changes) { toHost(b, "cancelled"); toGuest(b, "declined"); }
     },
   };
+  /** A friend paid with a guest's shared code: the guest gets a code of their own for next time. Once per booking, never for oneself. */
+  async function rewardReferrer(b) {
+    if (!b.promo_ref || !b.promo_owner || (b.guest_email && b.guest_email.toLowerCase() === b.promo_owner.toLowerCase())) return;
+    const r = await db.run("UPDATE bookings SET rewarded_at=now() WHERE id=? AND rewarded_at IS NULL", b.id);
+    if (r.changes) events.emit("reward", { to: b.promo_owner, from: b.promo_ref, lang: (await db.one("SELECT lang FROM bookings WHERE id=?", b.promo_ref))?.lang ?? "en" });
+  }
   async function canRevive(b) {
     if (startsAt(b.date, b.time) <= new Date()) return false;
     const l = await listingOf(b.listing_id);

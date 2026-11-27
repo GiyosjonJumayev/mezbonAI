@@ -105,6 +105,15 @@ body.stagepage { padding: 0; grid-template-rows: auto 1fr; height: 100dvh; overf
 .frames iframe { width: 100%; height: 100%; border: 0; border-radius: 16px; background: #fff; }
 @media (max-width: 900px) { body.stagepage { height: auto; overflow: auto; } .frames { grid-template-columns: 1fr; } .frames iframe { height: 80dvh; } }
 
+.extra { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr) minmax(0, 1fr); gap: 8px; align-items: center; font-weight: 550; }
+@media (max-width: 520px) { .extra { grid-template-columns: 1fr 1fr; } .extra span { grid-column: 1 / -1; } }
+.boost summary { cursor: pointer; font-weight: 600; color: var(--link); min-height: 40px; display: flex; align-items: center; }
+.boost[open] { display: grid; gap: 8px; }
+.reporthead { display: flex; flex-wrap: wrap; gap: 12px 20px; justify-content: space-between; align-items: flex-start; }
+.reporthead .row { margin: 0; }
+dialog.report .tile b { overflow-wrap: normal; font-size: 1.3rem; }
+dialog.report { max-width: min(980px, calc(100vw - 32px)); width: 100%; max-height: calc(100dvh - 32px); overflow: auto; }
+@media print { body:has(dialog.report[open]) > :not(dialog) { display: none !important; } dialog.report { position: static; box-shadow: none; max-height: none; max-width: none; padding: 0; } dialog.report::backdrop { display: none; } }
 .dayline { list-style: none; padding: 4px; margin: -4px; display: grid; grid-auto-flow: column; grid-auto-columns: minmax(190px, 1fr); gap: 14px; overflow-x: auto; scrollbar-width: thin; }
 .dayline li { display: grid; gap: 2px; align-content: start; justify-items: start; padding: 12px 14px; border-radius: 14px; background: var(--soft); border-block-start: 4px solid var(--turq); }
 .dayline li.wait { border-color: var(--saffron); }
