@@ -7,7 +7,8 @@ const app = document.getElementById("app"), prefs = document.getElementById("pre
 const page = (...kids) => app.replaceChildren(el("div.wrap", {}, ...kids));
 const when = (iso) => new Intl.DateTimeFormat("uz", { timeZone: "Asia/Tashkent", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }).format(new Date(iso));
 const theme = themePicker({ theme: "Mavzu", auto: "Avtomatik", light: "Yorug‘", dark: "Qorong‘i" });
-const PROVIDER = { ...PAY_NAME, octo: "Octo", click: "Click", test: "Sinov", credit: "Hisobdan" };
+const KIND = { plan: "Tarif", trip: "Sayohat", boost: "Reklama" };
+const PROVIDER = { ...PAY_NAME, octo: "Octo", click: "Click", test: "Sinov", credit: "Hisobdan", reseller: "Sotuv hamkori" };
 const PAY_STATUS = { created: ["Kutilmoqda", ".warn"], paid: ["To‘langan", ".ok"], cancelled: ["Bekor", ""], failed: ["Xato", ".bad"], refund_due: ["Qaytarish kerak", ".bad"], refunded: ["Qaytarilgan", ""] };
 const REASON = { unsafe: "Xavfli yoki noqonuniy", false: "Noto‘g‘ri ma’lumot", offensive: "Haqoratli", other: "Boshqa" };
 const ACTION = { payment_paid: "To‘lov keldi", refund_due: "Qaytarish navbatga qo‘yildi", refunded: "Pul qaytarildi", payout: "O‘tkazma yozildi", host_verified: "Mezbon tekshirildi", host_unverified: "Tekshiruv bekor qilindi", host_suspended: "Mezbon to‘xtatildi", host_restored: "Mezbon tiklandi", listing_blocked: "Taklif to‘xtatildi", listing_unblocked: "Taklif ochildi", report_resolved: "Shikoyat yopildi", recovery_link: "Tiklash havolasi", key_rotated: "Kalit almashtirildi", passkey_added: "Passkey qo‘shildi", passkey_removed: "Passkey o‘chirildi", calendar_link: "Taqvim havolasi", email_confirmed: "Email tasdiqlandi", anonymized: "Shaxsiy ma’lumot o‘chirildi", letter_verified: "Niyat xati tasdiqlandi", letter_joined: "Hamkor qo‘shildi", letter_rejected: "Niyat xati rad etildi", letter_signed: "Niyat xati qaytarildi", letter_withdrawn: "Niyat xati qaytarib olindi" };
@@ -56,7 +57,7 @@ async function start() {
   const a = await api("/api/admin");
   prefs.replaceChildren(theme, el("button", { onclick: run(async () => { await api("/api/admin/logout", {}); login(); }) }, "Chiqish"));
   sample ??= !a.methods.some((m) => m !== "test"); // a demonstration starts with its sample data
-  const c = a.counts, box = el("div"), letters = el("div", {}, el("p.muted", { role: "status" }, "Yuklanmoqda…")), numbers = el("div", {}, el("p.muted", { role: "status" }, "Yuklanmoqda…")), search = el("input", { type: "search", value: q, placeholder: "Ism yoki ID", "aria-label": "Mezbon qidirish" });
+  const c = a.counts, box = el("div"), letters = el("div", {}, el("p.muted", { role: "status" }, "Yuklanmoqda…")), sellers = el("div", {}, el("p.muted", { role: "status" }, "Yuklanmoqda…")), codes = el("div", {}, el("p.muted", { role: "status" }, "Yuklanmoqda…")), payouts = el("div", {}, el("p.muted", { role: "status" }, "Yuklanmoqda…")), numbers = el("div", {}, el("p.muted", { role: "status" }, "Yuklanmoqda…")), search = el("input", { type: "search", value: q, placeholder: "Ism yoki ID", "aria-label": "Mezbon qidirish" });
   const pay = (p) => el("span.badge" + (PAY_STATUS[p.status]?.[1] ?? ""), {}, PAY_STATUS[p.status]?.[0] ?? p.status);
   page(el("h1", {}, "Boshqaruv"),
     el("div.tiles", {}, [["Mezbonlar", c.hosts], ["Sotuvdagi takliflar", c.listings], ["Javob kutayotgan bronlar", c.waiting], ["Tasdiqlangan bronlar", c.confirmed], ["Qabul qilingan pul", som(c.received)]].map(([k, v]) => el("div.card.tile", {}, el("b", {}, String(v)), el("span.muted", {}, k)))),
@@ -65,12 +66,62 @@ async function start() {
       table("Qaytarishlar", ["To‘lov", "Summa", "Sabab", "Urinish", "Amallar"], a.refunds.map((r) => [el("div", {}, PROVIDER[r.provider], el("div.small.muted", {}, r.payment_id)), el("div", {}, som(r.amount_uzs), r.amount_uzs < r.payment_uzs && el("div.small.muted", {}, `${som(r.payment_uzs)} dan`)), r.note ?? "", String(r.attempts), el("div.row", {}, r.provider !== "payme" && el("button.mini.text", { onclick: run(async () => { await post(`refunds/${r.id}/retry`); await start(); }) }, "Takrorlash"), el("button.mini.text", { onclick: run(async () => { if (!(await ask("Pul to‘lov kabinetida haqiqatan qaytarildimi? Buni bekor qilib bo‘lmaydi.", "Ha, qaytarildi", "Yo‘q"))) return; await post(`refunds/${r.id}/done`); await start(); }) }, "Qaytarildi"))]))),
     a.reports.length > 0 && card(`Shikoyatlar (${a.reports.length})`, table("Shikoyatlar", ["Taklif", "Sabab", "Izoh", "Vaqt", "Amallar"], a.reports.map((r) => [el("div", {}, el("a", { href: `/?l=${r.listing_id}`, target: "_blank", rel: "noopener" }, r.title), el("div.small.muted", {}, r.host)), REASON[r.reason], r.details ?? "", when(r.created_at),
       el("div.row", {}, el("button.mini.text.danger", { onclick: run(async () => { const on = r.status !== "blocked"; if (!(await ask(on ? "Taklif sotuvdan olinsinmi?" : "Taklif qayta ochilsinmi?", "Ha", "Yo‘q"))) return; await post(`listings/${r.listing_id}/block`, { on }); await start(); }) }, r.status === "blocked" ? "Ochish" : "To‘xtatish"), el("button.mini.text", { onclick: run(async () => { await post(`reports/${r.id}/resolve`); await start(); }) }, "Yopish"))]))),
+    card("Mezbonlarga to‘lov", payouts),
+    card("Promo kodlar", codes),
+    card("Sotuv hamkorlari (OCTO API)", sellers),
     card("Niyat xatlari", letters),
     card("Investor ko‘rsatkichlari", numbers),
     card("Mezbonlar", el("form.compose", { role: "search", onsubmit: (e) => { e.preventDefault(); q = search.value.trim(); hosts(box).catch((x) => toast(explain(x), true)); } }, search, el("button", { type: "submit" }, icon("search", 20), "Qidirish")), box),
-    card("So‘nggi to‘lovlar", a.payments.length ? table("To‘lovlar", ["Vaqt", "Turi", "Usul", "Summa", "Holati", "Izoh"], a.payments.map((p) => [when(p.created_at), { plan: "Tarif", trip: "Sayohat" }[p.kind] ?? "Bron", PROVIDER[p.provider], som(p.amount_uzs), pay(p), p.note ?? ""])) : el("p.muted", {}, "Hali to‘lov yo‘q.")),
+    card("So‘nggi to‘lovlar", a.payments.length ? table("To‘lovlar", ["Vaqt", "Turi", "Usul", "Summa", "Holati", "Izoh"], a.payments.map((p) => [when(p.created_at), KIND[p.kind] ?? "Bron", PROVIDER[p.provider], som(p.amount_uzs), pay(p), p.note ?? ""])) : el("p.muted", {}, "Hali to‘lov yo‘q.")),
     card("Amallar jurnali", a.audit.length ? table("Jurnal", ["Vaqt", "Kim", "Amal", "Obyekt"], a.audit.map((x) => [when(x.at), x.actor === "system" ? "tizim" : x.actor === "admin" ? "ma’mur" : x.actor, ACTION[x.action] ?? x.action, x.target])) : el("p.muted", {}, "Hali yozuv yo‘q.")));
-  await Promise.all([hosts(box), investor(numbers), letterList(letters)]);
+  await Promise.all([hosts(box), investor(numbers), letterList(letters), sellerList(sellers), promoList(codes), payoutList(payouts)]);
+}
+
+// ---- payouts ----------------------------------------------------------------------------------------
+/** What each maker is owed, as a list the bank imports; recorded in one step once the bank carried it out. */
+async function payoutList(box) {
+  const list = await api("/api/admin/payouts"), again = () => payoutList(box).catch((x) => toast(explain(x), true));
+  const ready = list.filter((x) => x.account), missing = list.filter((x) => !x.account), total = ready.reduce((s, x) => s + x.amount_uzs, 0);
+  const csv = () => {
+    const rows = [["hisob_raqami", "mfo", "oluvchi", "summa_som", "izoh"], ...ready.map((x) => [x.account, x.mfo, x.holder ?? x.name, x.amount_uzs, `SilkRoad ${x.id}`])];
+    const a = el("a", { href: URL.createObjectURL(new Blob(["\ufeff" + rows.map((r) => r.map((c) => `"${String(c).replaceAll('"', '""')}"`).join(",")).join("\r\n")], { type: "text/csv" })), download: `silkroad-tolov-${new Date().toISOString().slice(0, 10)}.csv` });
+    document.body.append(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+  };
+  const ref = el("input", { maxlength: 80, required: true, "aria-label": "Bank hujjati raqami", placeholder: "Bank hujjati raqami" });
+  const done = run(async () => { if (!(await ask(`${ready.length} ta mezbonga jami ${som(total)} o‘tkazildi deb yozilsinmi? Faqat bank o‘tkazmani bajarganidan keyin.`, "Ha, o‘tkazildi", "Yo‘q"))) return; await api("/api/admin/payouts", { reference: ref.value, items: ready.map((x) => ({ id: x.id, amount_uzs: x.amount_uzs })) }); toast("Yozildi"); await again(); });
+  box.replaceChildren(el("div.stack", { style: "gap:16px" },
+    list.length ? [el("p.small.muted", {}, "Ro‘yxatni CSV qilib bankka yuklang. Bank o‘tkazgandan keyin hujjat raqamini yozib, bir bosishda belgilang. Sotuv hamkorlari puli kelmagan bo‘lsa, kutib turing."),
+      table("To‘lovlar ro‘yxati", ["Mezbon", "Hisob", "Summa"], list.map((x) => [el("b", {}, x.name), x.account ? `${x.account} · ${x.mfo}` : el("span.badge.warn", {}, "Bank ma’lumoti yo‘q"), som(x.amount_uzs)])),
+      missing.length > 0 && el("div.note.warn", {}, `${missing.length} ta mezbon bank hisobini kiritmagan: ular ro‘yxatga kirmaydi.`),
+      ready.length > 0 && el("div.row", {}, el("button", { onclick: csv }, `CSV yuklash (${ready.length}, ${som(total)})`)),
+      ready.length > 0 && el("form.compose", { onsubmit: (e) => { e.preventDefault(); done({ currentTarget: e.submitter }); } }, ref, el("button.primary", { type: "submit" }, "O‘tkazildi deb belgilash"))]
+      : el("p.muted", {}, "Hozir to‘lanadigan pul yo‘q.")));
+}
+
+// ---- promo codes -----------------------------------------------------------------------------------
+/** Codes for hotels, guides, bloggers and campaigns. The platform pays the discount; makers earn the same. */
+async function promoList(box) {
+  const { list, referral: ref } = await api("/api/admin/promos"), again = () => promoList(box).catch((x) => toast(explain(x), true));
+  const code = el("input", { maxlength: 20, required: true, "aria-label": "Kod", placeholder: "KOD" }), pct = el("select", { "aria-label": "Chegirma" }, [5, 8, 10, 12, 15, 20].map((n) => el("option", { value: n, selected: n === 10 }, `${n}%`)));
+  const uses = el("input", { type: "number", min: 1, inputmode: "numeric", "aria-label": "Necha marta", placeholder: "Cheksiz" }), until = el("input", { type: "date", "aria-label": "Muddati" }), note = el("input", { maxlength: 120, "aria-label": "Kim uchun", placeholder: "Kim uchun: mehmonxona, gid, blog" });
+  const add = run(async () => { await api("/api/admin/promos", { code: code.value, pct: Number(pct.value), uses_max: uses.value ? Number(uses.value) : null, valid_until: until.value || null, note: note.value }); await again(); toast("Kod yaratildi"); });
+  box.replaceChildren(el("div.stack", { style: "gap:16px" }, el("p.small.muted", {}, "Chegirma platforma ulushidan to‘lanadi va hech qachon undan oshmaydi: mezbon daromadi o‘zgarmaydi. Havola: /?promo=KOD"),
+    el("form.fields", { onsubmit: (e) => { e.preventDefault(); add({ currentTarget: e.submitter }); } }, el("label", {}, "Kod", code), el("label", {}, "Chegirma", pct), el("label", {}, "Necha marta", uses), el("label", {}, "Muddati", until), el("label", {}, "Kim uchun", note), el("button", { type: "submit", style: "align-self:end" }, "Kod yaratish")),
+    list.length ? table("Promo kodlar", ["Kod", "Chegirma", "Ishlatildi", "Aylanma", "Narxi", "Holati"], list.map((p) => [el("div", {}, el("b", {}, p.code), p.note && el("div.small.muted", {}, p.note)), `${p.pct}%`, `${p.sold}${p.uses_max ? ` / ${p.uses_max}` : ""}`, som(p.gross), som(p.cost),
+      el("button.mini.text" + (p.active ? ".danger" : ""), { onclick: run(async () => { await post(`promos/${p.code}`, { active: !p.active }); await again(); }) }, p.active ? "O‘chirish" : "Yoqish")])) : el("p.muted", {}, "Hali kod yo‘q."),
+    el("div.note", {}, `Do‘stga 10% dasturi: ${ref.codes} ta mehmon kod oldi, ${ref.friends} ta do‘st to‘ladi. Aylanma ${som(ref.gross)}, chegirma ${som(ref.cost)}.`)));
+}
+
+// ---- resellers ------------------------------------------------------------------------------------
+/** Agencies, hotels and booking sites that sell through the OCTO standard. The key is shown once. */
+async function sellerList(box) {
+  const list = await api("/api/admin/resellers"), name = el("input", { maxlength: 80, required: true, "aria-label": "Hamkor nomi", placeholder: "Hamkor nomi" }), pct = el("select", { "aria-label": "Hamkor ulushi" }, [0, 5, 8, 10, 12, 15, 20, 25].map((n) => el("option", { value: n, selected: n === 10 }, `${n}%`)));
+  const again = () => sellerList(box).catch((x) => toast(explain(x), true)), made = el("div");
+  const add = run(async () => { const r = await api("/api/admin/resellers", { name: name.value, pct: Number(pct.value) }); name.value = ""; await again(); box.prepend(el("div.card.keycard", { role: "status" }, el("b", {}, `${r.name} uchun kalit (faqat hozir ko‘rinadi)`), el("code.secret", {}, r.key), el("p.small.muted", {}, `Manzil: ${location.origin}/octo · Sarlavha: Authorization: Bearer <kalit>`))); });
+  box.replaceChildren(el("div.stack", { style: "gap:16px" }, made, el("p.small.muted", {}, "Hamkor faqat mezboni ruxsat bergan takliflarni sotadi. Ulush mehmon to‘lagan narxdan olinadi; hamkor qolganini oyma-oy to‘laydi. Pul kelmaguncha mezbonga uning ulushini o‘tkazmang."),
+    el("form.compose", { onsubmit: (e) => { e.preventDefault(); add({ currentTarget: e.submitter }); } }, name, pct, el("button", { type: "submit" }, "Kalit yaratish")),
+    list.length ? table("Sotuv hamkorlari", ["Hamkor", "Ulush", "Sotildi", "Shu oy to‘laydi", "Jami to‘laydi", "Holati"], list.map((r) => [el("b", {}, r.name), `${r.pct}%`, `${r.sold} · ${som(r.gross)}`, som(r.month), som(r.owed),
+      el("button.mini.text" + (r.active ? ".danger" : ""), { onclick: run(async () => { if (r.active && !(await ask(`${r.name}: kalit o‘chirilsinmi? Sotuv darhol to‘xtaydi.`, "O‘chirish", "Yo‘q"))) return; await post(`resellers/${r.id}`, { active: !r.active }); await again(); }) }, r.active ? "O‘chirish" : "Yoqish")])) : el("p.muted", {}, "Hali hamkor yo‘q.")));
 }
 
 // ---- letters of intent ----------------------------------------------------------------------------

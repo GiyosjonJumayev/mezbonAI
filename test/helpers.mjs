@@ -47,6 +47,12 @@ export const req = (l, o = {}) => ({ listing_id: l.id, date: day(2), time: "10:0
 export const freeAt = async (core, l, n) => (await core.availability(l.id, day(n), 1))[0].times.find((t) => t.time === "10:00").free;
 /** Notifications are sent after the commit, so give them a moment. */
 export const settle = (ms = 60) => new Promise((r) => setTimeout(r, ms));
+/** Waits until `fn` returns something truthy (work finishing after a commit), at most `ms`. Returns the last value. */
+export async function eventually(fn, ms = 5000) {
+  let v;
+  for (const end = Date.now() + ms; !(v = await fn()) && Date.now() < end;) await settle(40);
+  return v;
+}
 
 const noNetwork = () => { throw new Error("no network in tests"); };
 function extend(domain) {

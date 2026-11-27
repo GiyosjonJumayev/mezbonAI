@@ -2,12 +2,25 @@
 import { PRICE_LIMITS as L } from "../../public/price.js";
 import { bad } from "../lib/util.mjs";
 
-export { unitPrice } from "../../public/price.js";
+export { extrasCost, unitPrice } from "../../public/price.js";
+import { EXTRAS } from "../../public/price.js";
 
 const within = (v, [lo, hi], name) => {
   if (!Number.isInteger(v) || v < lo || v > hi) throw bad(`${name}: ${lo}–${hi} oralig‘ida butun son bo‘lsin`);
   return v;
 };
+
+/** Up to four add-ons, each kind once, with a price per person or per group. */
+export function cleanExtras(v) {
+  if (!Array.isArray(v) || v.length > EXTRAS.length) throw bad("Qo‘shimcha xizmatlar noto‘g‘ri");
+  const seen = new Set();
+  return v.map((x) => {
+    if (!x || !EXTRAS.includes(x.kind) || seen.has(x.kind)) throw bad("Qo‘shimcha xizmat turi noto‘g‘ri");
+    seen.add(x.kind);
+    if (!["person", "booking"].includes(x.per)) throw bad("Narx kishi yoki guruh uchun bo‘lsin");
+    return { kind: x.kind, price: within(x.price, [1000, 10_000_000], "Qo‘shimcha xizmat narxi"), per: x.per };
+  });
+}
 
 /** Keeps only what is known. An empty part means the rule is off. */
 export function cleanPricing(v) {

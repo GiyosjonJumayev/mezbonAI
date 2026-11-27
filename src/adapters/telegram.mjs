@@ -1,4 +1,6 @@
 // Telegram bot for providers (long polling), started by the web server when a bot token is configured.
+// Guests can also connect a booking to get its updates here.
+import { LANGS, UI } from "../lib/i18n.mjs";
 import { asHost } from "../domain/accounts.mjs";
 import { REGIONS } from "../lib/i18n.mjs";
 import { extractFacts, norm } from "../ai/extract.mjs";
@@ -32,6 +34,13 @@ export function createBot(core, send, { baseUrl = "http://localhost:4321" } = {}
     const chat = String(msg.chat.id);
     const from = u.message?.from ?? u.callback_query?.from;
     try {
+      // A guest connecting a booking: never treated as a provider.
+      const guest = /^\/start g_([A-Za-z0-9]{16,40})$/.exec((msg.text ?? "").trim());
+      if (guest) {
+        const b = await core.linkGuestChat(guest[1], chat);
+        const t = (k) => UI[k][b && LANGS.includes(b.lang) ? b.lang : "en"];
+        return await send(chat, b ? `${t("tgOn")}\n${b.i18n[b.lang]?.title ?? b.i18n.en.title}\n${baseUrl}/?b=${b.token}` : t("tgBad"));
+      }
       const host = (await core.hostByTelegram(chat)) ?? (await core.createHost((from?.first_name || "Mezbon").slice(0, 60), { telegramChat: chat })), me = asHost(host.id);
       if (u.callback_query) {
         const [act, lid] = String(u.callback_query.data).split(":");

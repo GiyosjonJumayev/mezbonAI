@@ -2,7 +2,7 @@
 import { GEO, api, el, plate, store, subscribe } from "/common.js";
 import { art, icon } from "/art.js";
 
-const KEYS = ["q", "region", "category", "date", "guests", "max"];
+const KEYS = ["theme", "q", "region", "category", "date", "guests", "max"];
 const PRICES = [100_000, 150_000, 200_000, 300_000, 500_000];
 const WHOLE = 200; // up to this many offers the page filters by itself
 const WALL = ["pottery", "ikat", "carpet", "cooking", "tour", "embroidery", "wood", "bread", "village", "metal", "ikat", "pottery"];
@@ -21,6 +21,8 @@ export async function explore(ctx, id) {
   if (f.date < today()) f.date = "";
   if (!(f.region in cfg.regions)) f.region = "";
   if (!(f.category in cfg.categories)) f.category = "";
+  if (!Object.hasOwn(cfg.themes, f.theme)) f.theme = "";
+  const inTheme = (th, l) => Boolean(th) && (!th.categories || th.categories.includes(l.category)) && (!th.regions || th.regions.includes(l.region)) && (!th.maxMinutes || l.duration_min <= th.maxMinutes);
   let list = [], base = [], whole = true, turn = 0, small = KEYS.some((k) => f[k]), order = "", sort = store.get("sort") in SORTS ? store.get("sort") : "sortSoon";
   let nodes = new Map(); // listing id → its card in the grid
   const rows = new Map(); // listing id → cards in the rows below
@@ -32,7 +34,7 @@ export async function explore(ctx, id) {
     if (!texts.has(l.id)) texts.set(l.id, fold([...Object.values(l.i18n).map((x) => x.title), l.host, l.place ?? "", ...Object.values(cfg.regionNames[l.region]), ...Object.values(cfg.categories[l.category])].join(" ")));
     return texts.get(l.id);
   };
-  const match = (l, skip) => (skip === "region" || !f.region || l.region === f.region) && (skip === "category" || !f.category || l.category === f.category) && (!f.max || cost(l) <= Number(f.max))
+  const match = (l, skip) => (!f.theme || inTheme(cfg.themes[f.theme], l)) && (skip === "region" || !f.region || l.region === f.region) && (skip === "category" || !f.category || l.category === f.category) && (!f.max || cost(l) <= Number(f.max))
     && fold(f.q).split(/\s+/).every((w) => text(l).includes(w));
 
   // ---- controls -----------------------------------------------------------------------------
@@ -54,6 +56,9 @@ export async function explore(ctx, id) {
   const liveBadge = el("span.live", { hidden: true }, el("i"), t("liveOn"));
   const count = el("h2"), clear = el("button.ghost", { type: "button", onclick: () => { for (const k of KEYS) f[k] = ""; write(); sync(); refresh(); } }, t("clear"));
   const grid = el("div.grid"), empty = el("div");
+  // A theme has its own header above the results, and can be left with one tap.
+  const themeHead = el("div");
+  const drawTheme = () => themeHead.replaceChildren(...(f.theme ? [el("section.themehead", {}, art(`theme-${f.theme}`, cfg.themes[f.theme].art), el("div.stack", { style: "gap:8px" }, el("p.small", {}, el("button.ghost.mini.text", { type: "button", onclick: () => set("theme", "") }, `← ${t("allThemes")}`)), el("h2", {}, t(`th_${f.theme}`)), el("p", {}, t(`thd_${f.theme}`))))] : []));
   const results = el("section.stack", { style: "gap:22px" }, el("div.toolbar", {}, el("div.row", { role: "status" }, count, liveBadge), el("div.row", {}, clear, sorter)), el("div.grid", { "aria-hidden": "true" }, Array.from({ length: 6 }, () => el("div.stack", {}, el("div.skeleton", { style: "aspect-ratio:4/3" }), el("div.skeleton.line"), el("div.skeleton.line", { style: "width:60%" })))));
   const below = el("div.stack", { style: "gap:clamp(40px,7vw,84px)" });
   const wall = el("div.wall", { "aria-hidden": "true" }, [0, 1, 2].map((c) => el("div", {}, [0, 1, 2, 3].map((r) => art(`hero${c}${r}`, WALL[(c * 4 + r) % WALL.length])))));
@@ -102,10 +107,14 @@ export async function explore(ctx, id) {
   }
   function paint() {
     const now = list.filter((l) => match(l)).sort(SORTS[sort]);
+    // Up to two promoted offers that match the search go first; they always carry their label.
+    if (["sortSoon", "sortNew"].includes(sort) && now.length > 3) { const ads = now.filter((l) => l.promoted).slice(0, 2); now.splice(0, now.length, ...ads, ...now.filter((l) => !ads.includes(l))); }
     count.textContent = `${now.length} ${t("results")}`;
     clear.hidden = !filtered();
     sorter.hidden = now.length < 2;
     below.hidden = filtered();
+    drawTheme();
+    document.title = f.theme ? `${t(`th_${f.theme}`)} | SilkRoad` : `SilkRoad Experience OS: ${t("headline")}`;
     const tally = (k) => { const n = {}; for (const l of list) if (match(l, k)) n[l[k]] = (n[l[k]] ?? 0) + 1; return n; };
     const byCategory = tally("category"), byRegion = tally("region");
     for (const b of rail.children) { const n = byCategory[b.dataset.c] ?? 0; b.setAttribute("aria-pressed", String(f.category === b.dataset.c)); b.classList.toggle("none", !n); b.lastChild.textContent = n; }
@@ -139,11 +148,14 @@ export async function explore(ctx, id) {
   }
   function more() {
     const limit = addDays(today(), 1), soon = base.filter((l) => l.next && l.next.date <= limit).sort(SORTS.sortSoon), seen = store.json("recent", []).map((x) => base.find((l) => l.id === x)).filter(Boolean).slice(0, 8);
-    below.replaceChildren(...[strip(t("recent"), seen), soon.length > 2 && soon.length < base.length && strip(t("soonTitle"), soon.slice(0, 10)),
+    const themes = Object.keys(cfg.themes).map((th) => [th, base.filter((l) => inTheme(cfg.themes[th], l)).length]).filter(([, n]) => n);
+    below.replaceChildren(...[themes.length > 1 && el("section.stack.reveal", { style: "gap:18px" }, el("h2", {}, t("themes")), el("div.themes", {}, themes.map(([th, n]) => el("button.themecard", { type: "button", onclick: () => { set("theme", th); scrollTo(0, 0); } }, art(`theme-${th}`, cfg.themes[th].art), el("span", {}, el("b", {}, t(`th_${th}`)), el("small", {}, `${n} ${t("results")}`)))))),
+      strip(t("recent"), seen), soon.length > 2 && soon.length < base.length && strip(t("soonTitle"), soon.slice(0, 10)),
       el("section.stack.reveal", { style: "gap:18px" }, el("div", {}, el("h2", {}, t("mapTitle")), el("p.muted.small", {}, t("mapNote"))),
         el("ul.tilemap.geo", {}, Object.keys(GEO).map((r) => { const n = base.filter((l) => l.region === r).length; return el("li", { style: `--c:${GEO[r][0]};--r:${GEO[r][1]}` }, el("button" + (n ? "" : ".none"), { type: "button", dataset: { r }, onclick: () => { set("region", r); scrollTo(0, 0); }, style: n ? `background:color-mix(in srgb, var(--turq) ${8 + Math.min(4, n) * 6}%, var(--card))` : null }, regionName(r), el("b", {}, String(n)))); }))),
       el("section.stack.reveal", { style: "gap:22px" }, el("h2", {}, t("howTitle")), el("ol.steps", {}, ["how1", "how2", "how3"].map((k) => el("li", {}, t(k)))),
         el("ul.promise", {}, [["check", "freeCancel"], ["chart", "trustPrice"], ["globe", "trustTalk"], ["ticket", "ticketHint"]].map(([i, k]) => el("li", {}, icon(i, 28), t(k))))),
+      el("section.giftband.reveal", {}, art("gift-band", "embroidery"), el("div.stack", { style: "gap:10px" }, el("h2", {}, t("giftTitle")), el("p", {}, t("giftText")), link({ gift: 1 }, "a.btn.primary", {}, t("giftBuy")))),
       el("section.join.reveal", {}, art("join", "ikat"), el("h2", {}, t("becomeHost")), el("p", {}, t("becomeText")), el("a.btn", { href: "/mezbon" }, t("forHosts")))].filter(Boolean));
   }
 
@@ -167,7 +179,7 @@ export async function explore(ctx, id) {
   }));
 
   sync();
-  app.replaceChildren(hero, el("div.wrap", { style: "padding-block-start:28px;gap:30px" }, rail, results, below));
+  app.replaceChildren(hero, el("div.wrap", { style: "padding-block-start:28px;gap:30px" }, themeHead, rail, results, below));
   count.textContent = "…";
   clear.hidden = sorter.hidden = true;
   if (f.region || f.category) tell();

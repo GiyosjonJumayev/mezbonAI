@@ -2,6 +2,7 @@
 import { bookingNotice, telegramSender } from "./adapters/telegram.mjs";
 import { asHost } from "./domain/accounts.mjs";
 import { createDomain } from "./domain/index.mjs";
+import { LANGS, UI } from "./lib/i18n.mjs";
 import { createMail } from "./domain/mail.mjs";
 import { createPush } from "./domain/push.mjs";
 import { createRates } from "./domain/rates.mjs";
@@ -34,10 +35,17 @@ export async function createApp({ db, config, pushSend, mailer, telegram = confi
   events.on("slots", async ({ listing }) => live.slots(listing, await listed(listing)));
   events.on("listing", async ({ listing }) => { live.listing(listing, await listed(listing)); live.numbers(); });
   events.on("numbers", () => live.numbers());
+  events.on("voucher", async ({ token }) => { const v = await db.one("SELECT * FROM vouchers WHERE token=?", token); if (v) await mail.voucher(v); });
+  events.on("reward", async ({ to, lang }) => mail.reward(to, await domain.promos.rewardCode(), lang));
+  events.on("quote", async ({ token }) => mail.quote(await core.groupRequest(token), (await db.one("SELECT email FROM group_requests WHERE token=?", token)).email));
 
   events.on("host", async ({ hostId, listing, ...ev }) => {
     http.push(hostId, ev);
-    if (listing) await bookingChanged(ev.id, listing);
+    if (listing) bookingChanged(ev.id, listing).catch(() => {}); // open pages are told alongside, never before, the people involved
+    if (ev.type === "request") { // a group asks for a price
+      const g = await db.one("SELECT g.name, g.guests, g.date, l.i18n->'uz'->>'title' title FROM group_requests g JOIN listings l ON l.id=g.listing_id WHERE g.id=?", ev.id), h = await db.one("SELECT email FROM hosts WHERE id=?", hostId), text = `${g.name}, ${g.guests} kishi, ${uzDate(g.date)}: ${g.title}`;
+      return Promise.all([push.toHost(hostId, "Guruh so‘rovi", text, "/mezbon#sorovlar"), mail.queue(h.email, `Guruh so‘rovi: ${g.title}`, { title: "Guruh so‘rovi", lines: [text, "Narx va vaqtni yozing."], button: { text: "Javob berish", url: `${config.publicUrl}/mezbon#sorovlar` } })]);
+    }
     const b = (await core.hostHome(asHost(hostId))).bookings.find((x) => x.id === ev.id);
     if (!b) return;
     const h = await db.one("SELECT telegram_chat, email FROM hosts WHERE id=?", hostId);
@@ -49,12 +57,24 @@ export async function createApp({ db, config, pushSend, mailer, telegram = confi
   });
   // The row may be older than the change it reports, so the newest one is read for the e-mail.
   events.on("guest", async ({ booking, type, text }) => {
-    if (type !== "reminder") await bookingChanged(booking.id, booking.listing_id);
+    if (type !== "reminder") bookingChanged(booking.id, booking.listing_id).catch(() => {});
+    if (telegram && booking.guest_chat) { // the guest connected this booking to Telegram
+      const b = (await core.byId(booking.id)) ?? booking, g = LANGS.includes(b.lang) ? b.lang : "en";
+      const says = { paid: UI.paid[g], confirmed: UI.confirmed[g], declined: UI.declined[g], cancelled: UI.cancelled[g], refunded: UI.refunded[g], reminder: UI.remind[g], message: text }[type];
+      if (says) Promise.resolve(telegram(b.guest_chat, `${b.i18n[g].title}\n${says}\n${config.publicUrl}/?b=${b.token}&lang=${g}`)).catch(() => console.error("Telegram xabari yuborilmadi"));
+    }
     if (PUSHED.has(type)) await push.toGuest(booking, type, text);
     await mail.guest((await core.byId(booking.id)) ?? booking, type, text);
   });
 
   const remind = async () => Promise.all((await core.takeReminders()).flatMap((b) => [push.toGuest(b, "reminder"), mail.guest(b, "reminder"), push.toHost(b.host_id, "Yaqin tashrif", `${b.guest_name}, ${b.guests} kishi, ${uzDate(b.date)}, ${b.time}`, "/mezbon#yordamchi")]));
+  const recall = async () => { if (!mail.on) return 0; const list = await core.takeRecalls(); for (const b of list) await mail.recall(b); return list.length; };
+  const follow = async () => {
+    if (!mail.on) return 0;
+    const list = await core.takeFollowups(), all = list.length ? await core.search({ log: false }) : [];
+    for (const b of list) await mail.after(b, all.filter((x) => x.id !== b.listing_id && x.region === b.region && x.next).slice(0, 3));
+    return list.length;
+  };
   const openings = async () => {
     if (!mail.on) return 0;
     const list = await core.takeOpenings();
@@ -66,6 +86,8 @@ export async function createApp({ db, config, pushSend, mailer, telegram = confi
     [2, "unanswered", core.declineUnanswered],
     [5, "reminders", remind],
     [1, "waitlist", openings],
+    [10, "recall", recall],
+    [30, "after visit", follow],
     [1, "mail", mail.work],
     [24 * 60, "waitlist cleanup", core.cleanWaitlist],
     [6 * 60, "rates", rates.work],
@@ -87,5 +109,5 @@ export async function createApp({ db, config, pushSend, mailer, telegram = confi
       tick();
     }
   }
-  return { ...domain, push, mail, rates, live, remind, openings, server: http.server, startJobs, stopJobs: () => timers.forEach(clearInterval) };
+  return { ...domain, push, mail, rates, live, remind, openings, recall, follow, server: http.server, startJobs, stopJobs: () => timers.forEach(clearInterval) };
 }

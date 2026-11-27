@@ -9,7 +9,9 @@ import { MAX_PHOTOS } from "../domain/catalog.mjs";
 import { asHost } from "../domain/accounts.mjs";
 import { cleanEmail } from "../domain/mail.mjs";
 import { COMMISSIONS, KINDS } from "../domain/partners.mjs";
-import { HOTEL_FEE, PLANS } from "../domain/plans.mjs";
+import { BOOST, HOTEL_FEE, PLANS } from "../domain/plans.mjs";
+import { THEMES } from "../lib/themes.mjs";
+import { VOUCHER } from "../domain/vouchers.mjs";
 import { CATEGORIES, LANGS, LANG_NAMES, PHRASES, PROVIDER_TYPES, REGIONS, REGION_NAMES, UI } from "../lib/i18n.mjs";
 import { fail } from "../lib/util.mjs";
 import { counter, limiter } from "./guard.mjs";
@@ -21,10 +23,10 @@ function sniffImage(b) {
   return null;
 }
 
-export function createRoutes({ core, payments, admin, metrics, partners, stage, config, db, push, mail, rates, photos }) {
+export function createRoutes({ core, payments, admin, metrics, partners, stage, resellers, promos, config, db, push, mail, rates, photos }) {
   mkdirSync(photos, { recursive: true });
   const limitAi = limiter(20, 60e3), limitSignup = limiter(10, 10 * 60e3), limitLogin = limiter(20, 10 * 60e3), limitTicket = limiter(60, 60e3), limitAdmin = limiter(5, 15 * 60e3), limitReport = limiter(5, 3600e3), limitLetter = limiter(6, 3600e3), limitStage = limiter(10, 3600e3), limitPay = limiter(20, 60e3), limitMail = limiter(5, 10 * 60e3), limitAddress = limiter(3, 3600e3), limitBook = limiter(20, 10 * 60e3), limitTrip = limiter(5, 10 * 60e3);
-  const newSearch = counter(1, 10 * 60e3); // one visitor repeating a search is one signal of demand
+  const limitPromo = limiter(15, 10 * 60e3), newSearch = counter(1, 10 * 60e3); // one visitor repeating a search is one signal of demand
   const newView = counter(1, 30 * 60e3);
   const dropPhoto = (f) => (f ? unlink(path.join(photos, path.basename(f))).catch(() => {}) : null);
   const tripView = async (token) => { const { id, ...t } = await core.trip(token); return { ...t, payMethods: payments.tripMethods() }; };
@@ -32,7 +34,7 @@ export function createRoutes({ core, payments, admin, metrics, partners, stage, 
 
   const open = {
     "GET /healthz": async () => ({ ok: await db.ping() }),
-    "GET /api/config": () => ({ langs: LANGS, langNames: LANG_NAMES, regions: REGIONS, regionNames: REGION_NAMES, categories: CATEGORIES, ui: UI, phrases: PHRASES, providerTypes: PROVIDER_TYPES, plans: PLANS, hotelFee: HOTEL_FEE, cancelHours: CANCEL_HOURS, maxPhotos: MAX_PHOTOS, ai: aiEnabled(), payMethods: payments.methods(), testPayments: config.testPayments, fx: rates.get(), mail: mail.on, demoSite: config.demoSite, stage: config.stage, commissions: COMMISSIONS, partnerKinds: KINDS }),
+    "GET /api/config": () => ({ telegramBot: config.telegramToken && config.telegramBot, voucher: VOUCHER, boost: BOOST, themes: THEMES, langs: LANGS, langNames: LANG_NAMES, regions: REGIONS, regionNames: REGION_NAMES, categories: CATEGORIES, ui: UI, phrases: PHRASES, providerTypes: PROVIDER_TYPES, plans: PLANS, hotelFee: HOTEL_FEE, cancelHours: CANCEL_HOURS, maxPhotos: MAX_PHOTOS, ai: aiEnabled(), payMethods: payments.methods(), testPayments: config.testPayments, fx: rates.get(), mail: mail.on, demoSite: config.demoSite, stage: config.stage, commissions: COMMISSIONS, partnerKinds: KINDS }),
     "GET /api/listings": async ({ q, ip }) => {
       const f = { region: q.get("region"), category: q.get("category"), date: q.get("date"), guests: Number(q.get("guests")), lang: q.get("lang"), source: q.get("source") === "ai" ? "ai" : "web" };
       return core.search({ ...f, log: newSearch([ip, f.source, f.region, f.category].join("|")) });
@@ -44,6 +46,18 @@ export function createRoutes({ core, payments, admin, metrics, partners, stage, 
       if (typeof body.email === "string") limitAddress(`wait|${body.email.trim().toLowerCase()}`);
       return core.joinWaitlist(id, body);
     },
+    "POST /api/promo/check": ({ body, ip }) => { limitPromo(ip); return promos.checkPromo(body.code, body.listing_id); },
+    "POST /api/listings/:id/group": ({ id, body, ip }) => { limitMail(ip); if (typeof body.email === "string") limitAddress(`group|${body.email.trim().toLowerCase()}`); return core.askGroup(id, body); },
+    "GET /api/requests/:id": ({ id }) => core.groupRequest(id),
+    "POST /api/requests/:id/book": ({ id, body, ip }) => { limitBook(ip); return core.bookQuote(id, body); },
+    "POST /api/bookings/:id/referral": async ({ id }) => promos.referralCode(await core.byId(await core.bookingId(id))),
+    "POST /api/vouchers": ({ body, ip }) => { limitBook(ip); return core.createVoucher(body); },
+    "GET /api/vouchers/:id": ({ id }) => core.voucher(id),
+    "POST /api/vouchers/:id/pay": ({ id, body, ip }) => { limitPay(ip); return payments.startVoucher(id, body.method); },
+    "POST /api/vouchers/:id/refresh": async ({ id, ip }) => { limitPay(ip); const v = await db.one("SELECT id FROM vouchers WHERE token=?", id); if (v) await payments.refresh("voucher", v.id); return core.voucher(id); },
+    "POST /api/voucher/check": ({ body, ip }) => { limitPromo(ip); return core.checkVoucher(body.code); },
+    "POST /api/bookings/:id/telegram": async ({ id }) => { if (!config.telegramToken || !config.telegramBot) throw fail(404, "Topilmadi", "notfound"); return { url: `https://t.me/${config.telegramBot}?start=g_${await core.telegramCode(id)}` }; },
+    "GET /api/panel/report": ({ q }) => metrics.regionReport(q.get("region"), Number(q.get("days")) || 90),
     "POST /api/waitlist/:id/leave": ({ id }) => core.leaveWaitlist(id),
     "GET /api/listings/:id": async ({ id, q, ip }) => {
       const l = await core.listing(id);
@@ -82,7 +96,7 @@ export function createRoutes({ core, payments, admin, metrics, partners, stage, 
   };
 
   const guest = {
-    "POST /api/bookings": ({ body, ip }) => { limitBook(ip); const { trip_id, ...b } = body; return core.book(b); },
+    "POST /api/bookings": ({ body, ip }) => { limitBook(ip); const { trip_id, ...b } = body; return core.book(b); }, // `via` is never taken from a visitor
     "GET /api/bookings/:id": ({ id }) => core.guestBooking(id),
     "POST /api/bookings/:id/pay": ({ id, body, ip }) => { limitPay(ip); return payments.startBooking(id, body.method); },
     /** After coming back from the payment page: asks the payment company instead of trusting the address bar. */
@@ -171,6 +185,10 @@ export function createRoutes({ core, payments, admin, metrics, partners, stage, 
     "POST /api/host/assistant": ({ key, body, ip }) => { limitAi(ip); return core.assistantChat(key, body); },
     "POST /api/host/assistant/apply": ({ key, body, ip }) => { limitAi(ip); return core.assistantApply(key, body); },
     "GET /api/host/plans": async ({ key }) => { const p = await core.plans(key); return { ...p, payMethods: payments.methods() }; },
+    "GET /api/host/requests": ({ key }) => core.groupRequests(key),
+    "POST /api/host/requests/:id": ({ key, id, body }) => core.answerGroup(key, id, body),
+    "POST /api/host/listings/:id/boost": ({ key, id, body, ip }) => { limitPay(ip); return payments.startBoost(key, id, body.method); },
+    "POST /api/host/bank": ({ key, body }) => core.setBank(key, body),
     "POST /api/host/plans/:id/pay": ({ key, id, body, ip }) => { limitPay(ip); return payments.startPlan(key, id, body.method); },
     "POST /api/host/plans/refresh": async ({ key, ip }) => { limitPay(ip); await payments.refresh("plan", (await core.authHost(key)).id); return core.plans(key); },
   };
@@ -178,6 +196,18 @@ export function createRoutes({ core, payments, admin, metrics, partners, stage, 
   // Everything below needs an administrator session; `admin: true` is checked before the handler runs.
   const adminOnly = {
     "GET /api/admin": () => admin.overview(),
+    "GET /api/admin/payouts": () => payments.payoutList(),
+    "POST /api/admin/payouts": async ({ body }) => { // recorded after the bank carried out the list
+      if (!Array.isArray(body.items) || !body.items.length || typeof body.reference !== "string") throw fail(400, "Ro‘yxat va bank hujjati raqami kerak");
+      await db.tx(async () => { for (const x of body.items.slice(0, 1000)) await payments.recordPayout(x.id, x.amount_uzs, body.reference); }); // all or nothing, like the bank list
+      return { ok: true, count: body.items.length };
+    },
+    "GET /api/admin/promos": async () => ({ list: await promos.promos(), referral: await promos.referralTotals() }),
+    "POST /api/admin/promos": ({ body }) => promos.createPromo(body),
+    "POST /api/admin/promos/:id": ({ id, body }) => promos.setPromo(id, body),
+    "GET /api/admin/resellers": () => resellers.resellers(),
+    "POST /api/admin/resellers": ({ body }) => resellers.createReseller(body),
+    "POST /api/admin/resellers/:id": ({ id, body }) => resellers.setReseller(id, body),
     "GET /api/admin/partners": async () => ({ totals: await partners.letterTotals(), list: await partners.partners() }),
     "POST /api/admin/partners/:id": ({ id, body }) => partners.setPartner(id, body),
     "GET /api/admin/metrics": ({ q }) => metrics.investor({ days: Number(q.get("days")) || 90, sample: q.get("sample") === "1" }),

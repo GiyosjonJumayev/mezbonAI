@@ -51,6 +51,32 @@ export function createMail({ db, config, transport = config.mail && nodemailer.c
       if (["paid", "refunded"].includes(type)) lines.push(`${t("total")}: ${uzs(b.total_uzs, lang)}`);
       return queue(b.guest_email, `${b.i18n[lang].title}: ${says}`, { title: b.i18n[lang].title, lines, button: { text: t("open"), url: `${config.publicUrl}/?b=${b.token}&lang=${lang}` } }, lang);
     },
+    /** One reminder that a hold ran out while the place is still free. */
+    recall(b) {
+      const lang = LANGS.includes(b.lang) ? b.lang : "en", t = (k) => UI[k][lang];
+      return queue(b.guest_email, `${b.i18n[lang].title}: ${t("recallTitle")}`, { title: t("recallTitle"), lines: [b.i18n[lang].title, `${t("date")}: ${longDate(b.date, lang)}, ${b.time}`, `${t("guests")}: ${b.guests}`, t("recallText")], button: { text: t("open"), url: `${config.publicUrl}/?b=${b.token}&lang=${lang}` } }, lang);
+    },
+    /** After the visit: a review, and a few more experiences nearby. */
+    after(b, more) {
+      const lang = LANGS.includes(b.lang) ? b.lang : "en", t = (k) => UI[k][lang];
+      return queue(b.guest_email, `${b.i18n[lang].title}: ${t("afterTitle")}`, { title: t("afterTitle"), lines: [t("afterText"), ...(more.length ? ["", `${t("moreNear")}:`, ...more.map((x) => `${x.i18n[lang].title}: ${config.publicUrl}/?l=${x.id}&lang=${lang}`)] : [])], button: { text: t("rate"), url: `${config.publicUrl}/?b=${b.token}&lang=${lang}` } }, lang);
+    },
+    /** The gift card, to the buyer. */
+    voucher(v) {
+      const lang = LANGS.includes(v.lang) ? v.lang : "en", t = (k) => UI[k][lang];
+      return queue(v.buyer_email, t("giftReady"), { title: t("giftReady"), lines: [`${t("giftCode")}: ${v.code}`, `${t("total")}: ${uzs(v.amount_uzs, lang)}`, ...(v.recipient ? [`${t("giftFor")}: ${v.recipient}`] : []), `${t("giftValid")}: ${longDate(v.valid_until, lang)}`], button: { text: t("giftOpen"), url: `${config.publicUrl}/?giftcard=${v.token}&lang=${lang}` } }, lang);
+    },
+    /** For a guest who brought a friend. */
+    reward(to, code, lg) {
+      const lang = LANGS.includes(lg) ? lg : "en", t = (k) => UI[k][lang];
+      return queue(to, t("rewardTitle"), { title: t("rewardTitle"), lines: [t("rewardText"), `${t("promoLabel")}: ${code}`], button: { text: t("explore"), url: `${config.publicUrl}/?promo=${code}&lang=${lang}` } }, lang);
+    },
+    /** The provider's answer to a group. */
+    quote(g, to) {
+      const lang = LANGS.includes(g.lang) ? g.lang : "en", t = (k) => UI[k][lang], title = g.i18n[lang].title;
+      const lines = g.quote ? [title, `${t("date")}: ${longDate(g.date, lang)}, ${g.quote.time}`, `${t("guests")}: ${g.guests}`, `${t("total")}: ${uzs(g.quote.total_uzs, lang)}`, ...(g.quote.note ? [g.quote.note] : [])] : [title, t("quoteDeclined")];
+      return queue(to, `${title}: ${g.quote ? t("quoteTitle") : t("quoteDeclined")}`, { title: g.quote ? t("quoteTitle") : title, lines, button: { text: t("open"), url: `${config.publicUrl}/?q=${g.token}&lang=${lang}` } }, lang);
+    },
     /** A place opened for someone on the waiting list. */
     async placeOpen(w) {
       const lang = LANGS.includes(w.lang) ? w.lang : "en", t = (k) => UI[k][lang];

@@ -11,6 +11,10 @@ import { createPartners } from "./partners.mjs";
 import { createPlans } from "./plans.mjs";
 import { createStage } from "./stage.mjs";
 import { createWaitlist } from "./waitlist.mjs";
+import { createResellers } from "./resellers.mjs";
+import { createPromos } from "./promos.mjs";
+import { createGroups } from "./groups.mjs";
+import { createVouchers } from "./vouchers.mjs";
 import { createTrips } from "./trips.mjs";
 import { createPayments } from "../payments/payments.mjs";
 
@@ -34,17 +38,20 @@ export function createDomain({ db, config, fetchFn = fetch }) {
   const plans = createPlans({ db, accounts });
   const catalog = createCatalog({ db, accounts, plans, events });
   const availability = createAvailability({ db, catalog, events });
-  const bookings = createBookings({ db, events, accounts, catalog, availability, plans, refunds });
-  payments = createPayments({ db, config, fetchFn, accounts, bookings, plans, audit });
+  const promos = createPromos({ db, audit }), vouchers = createVouchers({ db, audit });
+  const bookings = createBookings({ db, events, accounts, catalog, availability, plans, refunds, promos, vouchers });
+  payments = createPayments({ db, config, fetchFn, accounts, catalog, bookings, plans, vouchers, events, audit });
+  const groups = createGroups({ db, events, accounts, catalog, bookings });
   const trips = createTrips({ db, catalog, availability, bookings });
   const waitlist = createWaitlist({ db, catalog, availability });
   const insights = createInsights({ db, accounts, availability, plans });
   const partners = createPartners({ db, audit }), stage = createStage({ db, accounts });
+  const resellers = createResellers({ db, audit, catalog, availability, bookings, payments });
   const metrics = createMetrics({ db, config, partners });
   const admin = createAdmin({ db, accounts, payments, audit, events, config });
 
   const core = {};
-  for (const part of [accounts, plans, catalog, availability, bookings, trips, insights, waitlist]) for (const [k, fn] of Object.entries(part)) {
+  for (const part of [accounts, plans, catalog, availability, bookings, trips, insights, waitlist, groups, vouchers]) for (const [k, fn] of Object.entries(part)) {
     if (k in core) throw new Error(`Two domain functions are named ${k}`);
     core[k] = typeof fn === "function" ? fn.bind(part) : fn;
   }
@@ -54,5 +61,5 @@ export function createDomain({ db, config, fetchFn = fetch }) {
   for (const k of Object.keys(helper)) if (k in core) throw new Error(`Two domain functions are named ${k}`);
   Object.assign(core, helper);
 
-  return { core, payments, admin, metrics, partners, stage, events, config, db };
+  return { core, payments, admin, metrics, partners, stage, resellers, promos, vouchers, events, config, db };
 }

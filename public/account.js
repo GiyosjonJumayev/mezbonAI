@@ -66,6 +66,14 @@ function contact(a, cfg, load) {
 }
 
 /** The settings tab. Loads its own data. */
+/** Where payouts go: a 20-digit account and the bank's 5-digit code (MFO). */
+function bank(a, load) {
+  const account = el("input", { inputmode: "numeric", maxlength: 24, autocomplete: "off", value: a.bank?.account ?? "", placeholder: "20 ta raqam", "aria-describedby": "bank-why" }), mfo = el("input", { inputmode: "numeric", maxlength: 5, autocomplete: "off", value: a.bank?.mfo ?? "", placeholder: "00000" }), holder = el("input", { maxlength: 80, autocomplete: "name", value: a.bank?.holder ?? "" });
+  return el("form.stack", { style: "gap:12px", onsubmit: (e) => { e.preventDefault(); act(async () => { await api("/api/host/bank", { account: account.value, mfo: mfo.value, holder: holder.value }); toast("Bank ma’lumoti saqlandi"); await load(); })({ currentTarget: e.submitter }); } },
+    el("p.small.muted", { id: "bank-why" }, "Pul shu hisobga bank orqali o‘tkaziladi. Karta raqami emas: bankdagi 20 xonali hisob raqami."),
+    el("label", {}, "Hisob raqami", account), el("div.fields", {}, el("label", {}, "Bank kodi (MFO)", mfo), el("label", {}, "Kimning nomida", holder)), el("button", { type: "submit" }, "Saqlash"));
+}
+
 export function account({ home, cfg, planName, onKey, signOut, redraw }) {
   const box = el("div.stack", { style: "gap:22px" }, el("p.muted", { role: "status" }, "Yuklanmoqda…"));
   const load = async () => {
@@ -84,6 +92,7 @@ export function account({ home, cfg, planName, onKey, signOut, redraw }) {
           card("Taqvim", el("p", {}, "Bronlarni Google, Apple yoki Outlook taqvimida ko‘ring. Havola maxfiy; yangisi eskisini bekor qiladi."), el("button", { onclick: act(async () => { if (a.calendar && !(await ask("Yangi havola eskisini bekor qiladi. Davom etasizmi?", "Davom etish", "Yo‘q"))) return; const { url } = await api("/api/host/calendar-link", {}); toast((await copy(url)) ? "Taqvim havolasi nusxalandi" : url); a.calendar = true; }) }, icon("calendar", 20), a.calendar ? "Yangi taqvim havolasi" : "Taqvim havolasini olish"))),
         el("div.stack", { style: "gap:22px" },
           card("Aloqa", contact(a, cfg, load)),
+          card("Bank hisobi", bank(a, load)),
           card("Pulingiz", el("dl.sum", {}, [["To‘lashga tayyor", money.available], ["Kelgusi tashriflar", money.upcoming], ["To‘langan", money.paid_out]].map(([k, v], i) => [el("dt" + (i ? "" : ".all"), {}, k), el("dd" + (i ? "" : ".all"), {}, som(v))])),
             el("p.small.muted", {}, "Tashrif chipta bilan tasdiqlangach yoki 24 soat o‘tgach pul tayyor bo‘ladi. O‘tkazmani ma’muriyat bank orqali qiladi."), cfg.testPayments && el("div.note.warn", {}, "Sinov rejimi: bu haqiqiy pul emas."),
             money.payouts.length > 0 && list(money.payouts.map((p) => [el("span", {}, som(p.amount_uzs)), el("span.small.muted", {}, `${when(p.created_at)} · ${p.reference}`)]))),

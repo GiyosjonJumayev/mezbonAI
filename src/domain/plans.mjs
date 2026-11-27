@@ -8,15 +8,19 @@ export const PLANS = {
   business: { price: 490_000, commission: 6, listings: null, assistant: 300, days: [30, 90, 365], detail: true, intelligence: true },
 };
 export const PERIOD_DAYS = 30;
+/** Being shown first in search, always marked as promoted. */
+export const BOOST = { days: 7, price: 99_000 };
 /** A hotel that refers a guest earns this share. The platform's share depends on the provider's plan. */
 export const HOTEL_FEE = 8;
 const RANK = Object.keys(PLANS);
 
 export const effectivePlan = (h, at = new Date()) => (h.plan !== "free" && h.plan_until && new Date(h.plan_until) > at && Object.hasOwn(PLANS, h.plan) ? h.plan : "free");
-export function split(total, channel, plan = "free") {
+/** `partner` is a reseller's share in percent; it comes out of the provider's part, which the provider agreed to when allowing resale. */
+export function split(total, channel, plan = "free", partner = 0) {
   const platform = Math.round((total * PLANS[plan].commission) / 100);
   const hotel = channel === "hotel" ? Math.round((total * HOTEL_FEE) / 100) : 0;
-  return { total, platform, hotel, host: total - platform - hotel };
+  const resold = Math.round((total * partner) / 100);
+  return { total, platform, hotel, partner: resold, host: total - platform - hotel - resold };
 }
 
 export function createPlans({ db, accounts }) {

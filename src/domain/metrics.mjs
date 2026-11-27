@@ -1,6 +1,6 @@
 // The numbers an investor asks for, counted from the database. Test money and sample providers are left out unless asked for.
 import { REGIONS } from "../lib/i18n.mjs";
-import { addDays, ago, DAY, today } from "../lib/util.mjs";
+import { addDays, ago, DAY, fail, today } from "../lib/util.mjs";
 
 const pct = (a, b) => (b > 0 ? a / b : null);
 
@@ -39,17 +39,33 @@ export function createMetrics({ db, config, partners }) {
           v AS (SELECT date_trunc('month', i.created_at AT TIME ZONE 'Asia/Tashkent') d, SUM(i.amount_uzs) plans FROM invoices i JOIN hosts h ON h.id=i.host_id JOIN payments p ON p.id=i.payment_id WHERE (?::boolean OR (NOT h.demo AND p.provider <> 'test')) GROUP BY 1)
         SELECT to_char(m.d,'YYYY-MM') "month", COALESCE(t.bookings,0) bookings, COALESCE(t.gmv,0) gmv, COALESCE(t.fees,0) fees, COALESCE(v.plans,0) plans, COALESCE(t.active,0) active, COALESCE(k.joined,0) joined FROM m LEFT JOIN t ON t.d=m.d LEFT JOIN k ON k.d=m.d LEFT JOIN v ON v.d=m.d ORDER BY m.d`, s, s, s, s);
       const group = (col) => db.all(`SELECT ${col} k, COUNT(*) n, SUM(b.total_uzs) gmv ${FROM} WHERE b.created_at >= ? AND ${REAL} AND ${SOLD} GROUP BY 1 ORDER BY 2 DESC, 1 LIMIT 10`, since, s, s);
-      const revenue = money.fees + plans.uzs;
+      const boosts = (await db.one("SELECT COALESCE(SUM(p.amount_uzs),0) n FROM payments p WHERE p.kind='boost' AND p.paid_at >= ? AND (?::boolean OR p.provider <> 'test')", since, s)).n;
+      const revenue = money.fees + plans.uzs + boosts;
+      const gifts = await db.one("SELECT COUNT(*) FILTER (WHERE status='active') sold, COALESCE(SUM(amount_uzs) FILTER (WHERE status='active' AND paid_at >= ?),0) amount, COALESCE(SUM(balance_uzs) FILTER (WHERE status='active' AND valid_until >= current_date),0) open FROM vouchers", since);
       return {
         days: n, sample: s, since: since.slice(0, 10), real: !config.testPayments,
         funnel, conversion: { view_hold: pct(funnel.holds, funnel.views), hold_paid: pct(funnel.paid, funnel.holds), paid_confirmed: pct(funnel.confirmed, funnel.paid) },
-        money: { ...money, plans: plans.uzs, revenue, take_rate: pct(money.fees, money.gmv), average: money.bookings ? Math.round(money.gmv / money.bookings) : 0, refunds: back.uzs, refund_rate: pct(back.n, money.bookings + back.n) },
+        money: { ...money, plans: plans.uzs, boosts, gifts, revenue, take_rate: pct(money.fees, money.gmv), average: money.bookings ? Math.round(money.gmv / money.bookings) : 0, refunds: back.uzs, refund_rate: pct(back.n, money.bookings + back.n) },
         hosts: { ...hosts, days_to_publish: hosts.to_publish == null ? null : Math.round((hosts.to_publish / 86400) * 10) / 10 },
         quality: { reply_hours: quality.reply == null ? null : Math.round((quality.reply / 3600) * 10) / 10, decline_rate: pct(quality.declined, quality.answered), no_show: pct(quality.no_show, quality.past), rating: quality.rating == null ? null : Math.round(quality.rating * 10) / 10 },
         repeat: { guests: repeat.guests, again: repeat.again, rate: pct(repeat.again, repeat.guests) },
         letters: await partners.letterTotals(),
         months, channels: await group("b.channel"), languages: await group("b.lang"),
       };
+    },
+
+    /** For a regional authority: demand and supply in one region. Searches are real ones only; income only where three or more hosts earned. */
+    async regionReport(region, days = 90) {
+      if (!Object.hasOwn(REGIONS, region)) throw fail(400, "Viloyat noto‘g‘ri");
+      const n = [30, 90, 365].includes(days) ? days : 90, since = ago(n * DAY), s = config.testPayments;
+      const q = await db.one(`SELECT COUNT(*) searches, COUNT(*) FILTER (WHERE results=0) unmet, COUNT(DISTINCT lang) langs FROM searches WHERE region=? AND created_at >= ? AND NOT demo`, region, since);
+      const cats = await db.all(`SELECT category, COUNT(*) n, COUNT(*) FILTER (WHERE results=0) unmet FROM searches WHERE region=? AND category IS NOT NULL AND created_at >= ? AND NOT demo GROUP BY 1 ORDER BY 3 DESC, 2 DESC LIMIT 10`, region, since);
+      const langs = await db.all(`SELECT lang, COUNT(*) n FROM searches WHERE region=? AND created_at >= ? AND NOT demo AND lang IS NOT NULL GROUP BY 1 ORDER BY 2 DESC LIMIT 10`, region, since);
+      const months = await db.all(`SELECT to_char(date_trunc('month', for_date),'YYYY-MM') "month", COUNT(*) n FROM searches WHERE region=? AND for_date IS NOT NULL AND created_at >= ? AND NOT demo GROUP BY 1 ORDER BY 1 LIMIT 12`, region, since);
+      const supply = await db.one(`SELECT COUNT(*) listings, COUNT(DISTINCT l.host_id) hosts FROM listings l JOIN hosts h ON h.id=l.host_id WHERE l.region=? AND l.status='published' AND NOT l.unlisted AND h.suspended_at IS NULL AND ${REAL}`, region, s);
+      const sold = await db.one(`SELECT COUNT(*) bookings, COALESCE(SUM(b.guests),0) guests, COALESCE(SUM(b.host_uzs),0) income, COUNT(DISTINCT l.host_id) earning ${FROM} WHERE l.region=? AND b.created_at >= ? AND ${REAL} AND ${SOLD}`, region, since, s, s);
+      return { region, name: REGIONS[region], days: n, generated_at: new Date().toISOString(), sample: s, searches: q.searches, unmet: q.unmet, languages: langs, categories: cats, months, supply,
+        bookings: sold.bookings, guests: sold.guests, host_income_uzs: sold.earning >= 3 ? sold.income : null };
     },
 
     /** Public: where the money went. Totals only: three hosts must have earned before any income is shown, so nobody's own income can be read. */

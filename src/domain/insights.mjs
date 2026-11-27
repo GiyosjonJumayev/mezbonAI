@@ -52,7 +52,7 @@ export function createInsights({ db, accounts, availability, plans }) {
       return {
         plan: p.plan, days, available: PLANS.business.days, unlocked: p.days, detail: p.detail, bucket: size,
         totals: {
-          gross: sum(done, (b) => b.total_uzs), earned: sum(done, (b) => b.host_uzs), fees: sum(done, (b) => b.platform_uzs + b.hotel_uzs), expected: sum(expected, (b) => b.host_uzs),
+          gross: sum(done, (b) => b.total_uzs), earned: sum(done, (b) => b.host_uzs), fees: sum(done, (b) => b.partner_uzs + b.platform_uzs + b.hotel_uzs), expected: sum(expected, (b) => b.host_uzs),
           bookings: done.length, guests: sum(done, (b) => b.guests), average: done.length ? Math.round(sum(done, (b) => b.total_uzs) / done.length) : 0,
           cancelled: rows.filter((b) => b.status === "cancelled").length, declined: rows.filter((b) => b.status === "declined").length, checkedIn: done.filter((b) => b.checked_in_at).length,
           views: totalViews, conversion: totalViews >= live.length && totalViews > 0 ? live.length / totalViews : null,

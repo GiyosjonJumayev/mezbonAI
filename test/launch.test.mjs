@@ -5,7 +5,7 @@ import { createHash } from "node:crypto";
 import { cleanEmail, cleanPhone, isEmail, render } from "../src/domain/mail.mjs";
 import { parseRates } from "../src/domain/rates.mjs";
 import { base32, newTotpSecret, totp, totpChecker } from "../src/lib/totp.mjs";
-import { CLICK, day, OCTO, req, serve, settle, setup, status } from "./helpers.mjs";
+import { CLICK, day, eventually, OCTO, req, serve, settle, setup, status } from "./helpers.mjs";
 
 // ---- Click ----------------------------------------------------------------------------------------
 async function clickSetup(reply = { error_code: 0 }) {
@@ -234,8 +234,7 @@ test("the guest gets a receipt, a confirmation with the address, and a refund no
   assert.match(out[1].html, /Kulollar &lt;12&gt;/);
   assert.match(out[1].text, /40\.35,71\.28/);
   await core.cancel(b.token);
-  await settle(500);
-  await mail.work();
+  await eventually(async () => { await mail.work(); return out.length >= 4; }); // the refund finishes after the cancellation is saved
   assert.deepEqual(out.slice(2).map((m) => m.subject.split(": ")[1]).sort(), ["款项已退还", "预订已取消"].sort());
   const silent = await core.book(req(l, { date: day(6) }));
   await s.payTest(silent.token);
