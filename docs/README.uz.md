@@ -1,4 +1,4 @@
-# SilkRoad Experience OS 12.0
+# SilkRoad Experience OS 13.0
 
 **AI-powered Tourism Business Operating System**
 
@@ -20,7 +20,13 @@ Oddiy marketplace emas. Bu mahalliy turizm bizneslarini raqamlashtiradigan, ular
    - Daromad, konversiya, eng band vaqtlar, kelmaganlar, CSV.
    - Narx taqqosi, javobsiz talab, turistlar qidirgan sanalar va tillar.
 
-## 12.0 da yangi
+## 13.0 da yangi: kirish va ro‘yxatdan o‘tish
+
+- **Avval passkey**: brauzer saqlangan passkeyni email maydonining o‘zida taklif qiladi. Parol yo‘q.
+- **Emailga 6 xonali kod**: istalgan qurilmadan kirish. Kod bir marta, 10 daqiqa va 5 urinish uchun.
+- **Qisqa ro‘yxatdan o‘tish**: ism, faoliyat turi va email. Keyin kabinetda himoya ro‘yxati: passkey, emailni kod bilan tasdiqlash, zaxira havola.
+
+## 12.0 da
 
 - **Sovg‘a sertifikati**: tajribani sovg‘a qilish (`/?gift=1`). Chop etiladigan sovg‘a kartasi emailga keladi, kod bir yoki bir necha bronni to‘liq yoki qisman to‘laydi.
 - **Telegramda bron yangiliklari**: mehmon bitta tugma bilan bron haqidagi xabarlarni Telegramda o‘z tilida oladi.

@@ -114,6 +114,42 @@ body.stagepage { padding: 0; grid-template-rows: auto 1fr; height: 100dvh; overf
 dialog.report .tile b { overflow-wrap: normal; font-size: 1.3rem; }
 dialog.report { max-width: min(980px, calc(100vw - 32px)); width: 100%; max-height: calc(100dvh - 32px); overflow: auto; }
 @media print { body:has(dialog.report[open]) > :not(dialog) { display: none !important; } dialog.report { position: static; box-shadow: none; max-height: none; max-width: none; padding: 0; } dialog.report::backdrop { display: none; } }
+/* Sign-in and sign-up */
+.auth { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 480px); gap: clamp(20px, 4vw, 48px); align-items: start; }
+.authintro { position: relative; display: grid; gap: 22px; align-content: end; min-height: 520px; padding: clamp(22px, 4vw, 40px); border-radius: 28px; overflow: hidden; background: var(--night); color: var(--on-night); }
+.authintro .pattern { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; opacity: .3; }
+.authintro::after { content: ""; position: absolute; inset: 0; background: linear-gradient(180deg, rgb(11 29 51 / .15), rgb(11 29 51 / .92) 62%); }
+.authintro > .stack { z-index: 1; }
+.authintro > .stack { position: relative; }
+.authintro h1 { font-size: clamp(1.9rem, 1.3rem + 2.2vw, 3rem); line-height: 1.05; }
+.authpoints { list-style: none; padding: 0; display: grid; gap: 12px; }
+.authpoints li { display: flex; gap: 10px; align-items: center; color: var(--on-night-2); font-weight: 560; }
+.authpoints .icon { color: var(--saffron); }
+.authcard { gap: 22px; padding: clamp(20px, 3vw, 32px); box-shadow: var(--shadow); }
+.authtabs { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; padding: 4px; border-radius: 14px; background: var(--soft); }
+.authtabs button { min-height: 44px; border: 0; background: transparent; border-radius: 10px; font-weight: 620; color: var(--muted); }
+.authtabs button[aria-selected="true"] { background: var(--card); color: var(--ink); box-shadow: 0 1px 4px rgb(0 0 0 / .12); }
+.or { display: flex; align-items: center; gap: 12px; color: var(--muted); font-size: .88rem; border: 0; padding: 0; }
+.or::before, .or::after { content: ""; flex: 1; height: 1px; background: var(--line); }
+input.code { font-size: 1.6rem; letter-spacing: .5em; text-align: center; font-variant-numeric: tabular-nums; padding-inline-start: calc(14px + .5em); }
+.formerr { color: var(--bad); background: var(--bad-bg); padding: 10px 14px; border-radius: 12px; font-weight: 560; }
+.other summary { cursor: pointer; color: var(--link); font-weight: 600; min-height: 40px; display: flex; align-items: center; }
+.other ul { margin-block-start: 8px; font-size: .92rem; }
+.typecards { border: 0; padding: 0; margin: 0; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; min-width: 0; }
+.typecards legend { font-size: .88rem; font-weight: 550; color: var(--muted); margin-block-end: 6px; padding: 0; }
+.typecard { position: relative; display: flex; gap: 10px; align-items: center; padding: 12px 14px; border: 1px solid var(--field); border-radius: 14px; color: var(--ink); font-size: .95rem; cursor: pointer; min-height: 56px; }
+.typecard input { position: absolute; opacity: 0; width: 1px; height: 1px; }
+.typecard .icon { color: var(--turq); flex: none; }
+.typecard:has(input:checked) { border-color: var(--cobalt); box-shadow: 0 0 0 2px var(--cobalt); }
+.typecard:has(input:focus-visible) { outline: 3px solid var(--saffron); outline-offset: 2px; }
+.secure { border: 2px solid var(--saffron); }
+.securesteps { list-style: none; padding: 0; display: grid; gap: 16px; }
+.securestep { display: grid; grid-template-columns: 30px minmax(0, 1fr); gap: 12px; align-items: start; }
+.securestep .dot { width: 30px; height: 30px; border-radius: 50%; border: 2px solid var(--field); display: grid; place-items: center; }
+.securestep.done .dot { background: var(--ok); border-color: var(--ok); color: var(--bg); }
+.securestep.done b { color: var(--muted); text-decoration: line-through; }
+@media (max-width: 860px) { .auth { grid-template-columns: minmax(0, 1fr); } .authintro { min-height: 0; } .authintro .pattern { opacity: .25; } }
+@media (max-width: 380px) { .typecards { grid-template-columns: 1fr; } }
 .dayline { list-style: none; padding: 4px; margin: -4px; display: grid; grid-auto-flow: column; grid-auto-columns: minmax(190px, 1fr); gap: 14px; overflow-x: auto; scrollbar-width: thin; }
 .dayline li { display: grid; gap: 2px; align-content: start; justify-items: start; padding: 12px 14px; border-radius: 14px; background: var(--soft); border-block-start: 4px solid var(--turq); }
 .dayline li.wait { border-color: var(--saffron); }

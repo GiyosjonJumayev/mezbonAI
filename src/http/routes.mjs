@@ -26,10 +26,17 @@ function sniffImage(b) {
 export function createRoutes({ core, payments, admin, metrics, partners, stage, resellers, promos, config, db, push, mail, rates, photos }) {
   mkdirSync(photos, { recursive: true });
   const limitAi = limiter(20, 60e3), limitSignup = limiter(10, 10 * 60e3), limitLogin = limiter(20, 10 * 60e3), limitTicket = limiter(60, 60e3), limitAdmin = limiter(5, 15 * 60e3), limitReport = limiter(5, 3600e3), limitLetter = limiter(6, 3600e3), limitStage = limiter(10, 3600e3), limitPay = limiter(20, 60e3), limitMail = limiter(5, 10 * 60e3), limitAddress = limiter(3, 3600e3), limitBook = limiter(20, 10 * 60e3), limitTrip = limiter(5, 10 * 60e3);
-  const limitPromo = limiter(15, 10 * 60e3), newSearch = counter(1, 10 * 60e3); // one visitor repeating a search is one signal of demand
+  const limitCode = limiter(10, 3600e3), limitPromo = limiter(15, 10 * 60e3), newSearch = counter(1, 10 * 60e3); // one visitor repeating a search is one signal of demand
   const newView = counter(1, 30 * 60e3);
   const dropPhoto = (f) => (f ? unlink(path.join(photos, path.basename(f))).catch(() => {}) : null);
   const tripView = async (token) => { const { id, ...t } = await core.trip(token); return { ...t, payMethods: payments.tripMethods() }; };
+  /** A code to type, and a link, to confirm a provider's address. */
+  const sendVerify = async (key, address) => {
+    const { email, token } = await core.askEmail(key, address);
+    if (!token) return false;
+    const code = await core.emailCode((await core.authHost(key)).id, email, "verify");
+    return mail.queue(email, `SilkRoad: tasdiqlash kodi ${code}`, { title: "Emailni tasdiqlang", lines: [`Tasdiqlash kodi: ${code}`, "Kodni kabinetga yozing yoki pastdagi tugmani bosing. Shundan keyin yangi bronlar haqida xabar va kirish kodi shu manzilga keladi."], button: { text: "Tasdiqlash", url: `${config.publicUrl}/mezbon#email=${token}` } });
+  };
   const signedIn = async (session, opening) => { const s = await opening; session.set(s.token, s.maxAge); return s.host; };
 
   const open = {
@@ -111,10 +118,12 @@ export function createRoutes({ core, payments, admin, metrics, partners, stage, 
   const auth = {
     "POST /api/hosts": async ({ body, ip, label, session }) => {
       limitSignup(ip);
+      const email = body.email ? cleanEmail(body.email) : null; // checked before the account exists, so a typo stops nothing half-made
       const h = await core.createHost(body.name, { type: body.type ?? "artisan" });
       const s = await core.openSession(h.id, label);
       session.set(s.token, s.maxAge);
-      return h;
+      const sent = email && mail.on ? await sendVerify(s.token, email) : false;
+      return { ...h, email_sent: Boolean(sent) };
     },
     "POST /api/auth/key": ({ body, ip, label, session }) => { limitLogin(ip); return signedIn(session, core.signIn(body.key, label)); },
     "POST /api/auth/link": ({ body, ip, label, session }) => { limitLogin(ip); return signedIn(session, core.useLink(body.token, label)); },
@@ -125,15 +134,23 @@ export function createRoutes({ core, payments, admin, metrics, partners, stage, 
       if (!to) throw fail(400, "Email kerak", "email");
       limitAddress(`host|${to.toLowerCase()}`);
       const h = await core.hostByEmail(to);
-      if (h) await mail.queue(h.email, "SilkRoad kabinetiga kirish", { title: "Kabinetga kirish", lines: ["Havola 15 daqiqa ichida va faqat bir marta ishlaydi. Siz so‘ramagan bo‘lsangiz, e’tibor bermang."], button: { text: "Kirish", url: `${config.publicUrl}/mezbon#kirish=${await core.loginLink(asHost(h.id))}` } });
+      if (h) { // a code to type on any device, and a link for this one
+        const code = await core.emailCode(h.id, h.email, "login");
+        await mail.queue(h.email, `SilkRoad: kirish kodi ${code}`, { title: "Kabinetga kirish", lines: [`Kirish kodi: ${code}`, "Kod 10 daqiqa amal qiladi. Yoki pastdagi tugmani bosing: havola 15 daqiqa ichida bir marta ishlaydi.", "Siz so‘ramagan bo‘lsangiz, e’tibor bermang: kabinetingiz xavfsiz."], button: { text: "Kirish", url: `${config.publicUrl}/mezbon#kirish=${await core.loginLink(asHost(h.id))}` } });
+      }
       return { ok: true };
     },
+    "POST /api/auth/code": ({ body, ip, label, session }) => {
+      limitLogin(ip);
+      if (typeof body.email === "string") limitCode(`code|${body.email.trim().toLowerCase()}`);
+      return signedIn(session, core.signInWithCode(body.email, body.code, label));
+    },
+    "POST /api/host/email/code": ({ key, body, ip }) => { limitLogin(ip); return core.verifyEmailCode(key, body.code); },
     "POST /api/auth/email-confirm": ({ body, ip }) => { limitLogin(ip); return core.confirmEmail(body.token); },
     "POST /api/host/contact": ({ key, body }) => core.setContact(key, body),
     "POST /api/host/email": async ({ key, body, ip }) => {
       limitMail(ip);
-      const { email, token } = await core.askEmail(key, body.email);
-      if (token) await mail.queue(email, "SilkRoad: emailni tasdiqlang", { title: "Emailni tasdiqlang", lines: ["Tasdiqlasangiz, yangi bronlar haqida xabar va kirish havolasi shu manzilga keladi. Havola 1 soat ishlaydi."], button: { text: "Tasdiqlash", url: `${config.publicUrl}/mezbon#email=${token}` } });
+      await sendVerify(key, body.email);
       return { ok: true };
     },
     "POST /api/auth/sign-out": async ({ session }) => { await core.signOut(session.token); session.set("", 0); return { ok: true }; },

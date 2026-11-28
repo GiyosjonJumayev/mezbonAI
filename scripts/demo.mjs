@@ -46,4 +46,6 @@ Namoyish tayyor (barcha ma'lumot namuna, pul yechilmaydi):
   Sahna        http://localhost:${port}/stage
 To'xtatish: Ctrl+C`));
 app.startJobs();
+// In a demonstration e-mails are only printed, so they can go at once: a presenter can show a sign-in code live.
+setInterval(() => app.mail.work().catch(() => {}), 1000).unref();
 for (const s of ["SIGINT", "SIGTERM"]) process.on(s, () => { app.stopJobs(); app.server.closeAllConnections(); app.server.close(() => db.close().then(() => process.exit(0))); });

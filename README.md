@@ -1,4 +1,4 @@
-# SilkRoad Experience OS 12.0
+# SilkRoad Experience OS 13.0
 
 **AI-powered Tourism Business Operating System.** Every Local Experience. One Digital Platform. [O‘zbekcha](docs/README.uz.md)
 
@@ -12,7 +12,16 @@ A system that brings local tourism businesses in Uzbekistan online, helps them s
 
 Screenshots show made-up data. See [what still needs the outside world](#what-still-needs-the-outside-world).
 
-## What is new in 12.0
+## What is new in 13.0: sign-up and sign-in
+
+| | |
+|---|---|
+| **Passkeys first** | The browser offers a saved passkey right in the email field, with nothing to click. A button does the same for those who prefer it. No passwords exist to be stolen or forgotten. |
+| **Six-digit e-mail codes** | Sign in on any device with a code that arrives by e-mail. It works once, for 10 minutes and 5 tries, is stored only as a hash, and the answer never reveals whether an address has an account. The e-mail link still works too. |
+| **Sign-up in one short form** | Name, type of work as cards, and an optional e-mail. Then a checklist in the cabinet secures the account: create a passkey, confirm the e-mail with a code, save the backup link. |
+| **Clear separation** | "Sign in" and "Open a cabinet" are tabs; a first visit opens on sign-up, a returning one on sign-in. Errors appear under the form, where a screen reader and the eye look for them. |
+
+## New in 12.0
 
 | | |
 |---|---|
@@ -210,7 +219,7 @@ With the server running, add this to your MCP client. It can search, plan a trip
 
 ## What has been checked
 
-- 201 automated tests on PostgreSQL 18: rules, payments, simultaneous use, security, HTTP, MCP and Telegram.
+- 206 automated tests on PostgreSQL 18: rules, payments, simultaneous use, security, HTTP, MCP and Telegram.
 - Page views in real Microsoft Edge (light, dark, and a 320-pixel phone): 87 in version 6, and the new or changed pages since (73 views in version 8): no axe-core accessibility problems, no sideways scrolling and no console errors.
 - Sign-up, passkey sign-in and sign-out, trip planning and reservation, test payment, receipt, meeting point, refund, administration, signing a letter, the whole live stage, live places and prices, and the waiting list were driven in Edge.
 - The Central Bank rate feed was read live.

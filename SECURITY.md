@@ -8,6 +8,7 @@ Please report a vulnerability privately through GitHub: **Security → Report a 
 |---|---|
 | Stolen database | Access keys, sessions, one-time links and calendar addresses are stored as SHA-256 hashes. No card data is stored at all. Booking and trip links are stored as they are, because guests have no account. So is the key that signs push notifications. |
 | Stolen password | There are no provider passwords. Passkeys are bound to the site and need a fingerprint, face or PIN. |
+| Guessed sign-in code | Six digits, one use, 10 minutes, five tries, newest code only, stored as a hash. Asking and guessing are limited per address and per e-mail; replies never say whether an account exists. A confirmation code cannot be used to sign in. |
 | Stolen session | HttpOnly, SameSite=Strict, Secure cookies with the `__Host-` prefix on HTTPS. Devices are listed. One button signs out everywhere and replaces the key. |
 | Another website acting for a provider | Origin check on every change, JSON only, strict cookies. A sign-in link asks before switching accounts. |
 | Script injection | Text is never inserted as HTML. The content security policy allows no inline scripts or styles. |
