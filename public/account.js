@@ -9,9 +9,9 @@ export const passkeys = () => window.isSecureContext && "PublicKeyCredential" in
 const quiet = (e) => { if (e.name === "NotAllowedError" || e.name === "AbortError") throw new Error("Bekor qilindi yoki vaqt tugadi"); if (e.name === "InvalidStateError") throw new Error("Bu qurilmada passkey allaqachon bor"); throw e; };
 
 /** Opens the studio with the fingerprint, face or PIN of this device. */
-export async function passkeyLogin() {
+export async function passkeyLogin({ conditional = false, signal } = {}) {
   const { id, options } = await api("/api/auth/passkey/options", {});
-  const c = await navigator.credentials.get({ publicKey: { ...options, challenge: bytes(options.challenge), allowCredentials: [] } }).catch(quiet);
+  const c = await navigator.credentials.get({ publicKey: { ...options, challenge: bytes(options.challenge), allowCredentials: [] }, ...(conditional && { mediation: "conditional" }), signal }).catch(quiet);
   return api("/api/auth/passkey", { id, response: { id: c.id, rawId: text(c.rawId), type: c.type, clientExtensionResults: {}, response: { clientDataJSON: text(c.response.clientDataJSON), authenticatorData: text(c.response.authenticatorData), signature: text(c.response.signature), userHandle: c.response.userHandle ? text(c.response.userHandle) : undefined } } });
 }
 export async function passkeyAdd() {

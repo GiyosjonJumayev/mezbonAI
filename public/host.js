@@ -1,5 +1,6 @@
 import { act, api, ask, copy, counter, el, listen, plate, som, store, tint, toast, visual } from "/common.js";
-import { account, enter, keyCard, passkeyLogin, passkeys } from "/account.js";
+import { account, enter, keyCard } from "/account.js";
+import { authScreen, secureCard } from "/auth.js";
 import { assistant, forget } from "/assistant.js";
 import { icon } from "/art.js";
 import { demoBanner, installButton, themePicker } from "/pwa.js";
@@ -26,7 +27,7 @@ const today = () => new Date(Date.now() + 5 * 3600e3).toISOString().slice(0, 10)
 const page = (...kids) => app.replaceChildren(el("div.wrap", {}, ...kids));
 
 let show = "all", find = "";
-let home = null, stop = null, dirty = false, speech = "", freshKey = null;
+let home = null, stop = null, dirty = false, speech = "", freshKey = null, fresh = null;
 const tab = () => location.hash.slice(1) || "yordamchi";
 
 function speak(text) {
@@ -47,26 +48,10 @@ const PILLARS = [
 ];
 
 // ---- first visit ----------------------------------------------------------------------------
+/** Signed out: the sign-in and sign-up screen. */
 function welcome() {
-  const type = el("select", {}, Object.keys(cfg.providerTypes).map((k) => el("option", { value: k }, cfg.providerTypes[k].uz)));
-  const name = el("input", { maxlength: 60, required: true, autocomplete: "name" }), btn = el("button.primary", { type: "submit" }, "Boshlash");
-  page(el("div.two", {},
-    el("div.stack", { style: "gap:22px" }, el("h1", {}, "Mahalliy madaniyatni daromadga aylantiring"), el("p.muted", {}, "Taklif, bron, QR chipta va daromad tahlili bitta kabinetda. O‘zbekcha gapirasiz, mehmonlar o‘z tilida o‘qiydi va bron qiladi."),
-      el("div.pillars", {}, PILLARS.map(([h, t]) => el("section", {}, el("h3", {}, h), el("p.small.muted", {}, t))))),
-    el("form.card", { onsubmit: async (e) => {
-      e.preventDefault();
-      btn.disabled = true;
-      try { const h = await api("/api/hosts", { name: name.value, type: type.value }); freshKey = h.key; if (!location.hash) location.hash = "yangi"; await start(); } catch (err) { toast(err.message, true); btn.disabled = false; }
-    } }, el("h2", {}, "Kabinet ochish"), el("label", {}, "Ismingiz yoki biznes nomi", name), el("label", {}, "Faoliyatingiz", type), btn, el("p.small.muted.or", {}, "Avval ochganmisiz?"),
-      passkeys() && el("button", { type: "button", onclick: act(async () => { await passkeyLogin(); await start(); }) }, icon("key", 20), "Passkey bilan kirish"),
-      cfg.mail && mailLogin(),
-      el("p.small.muted", {}, "Yoki zaxira kirish havolangizni shu qurilmada oching. Telegram botdan kirish havolasi: /kirish"),
-      el("p.small", {}, "Hali tayyor emasmisiz? ", el("a", { href: "/hamkor" }, "Niyat xati imzolang")))));
-}
-
-function mailLogin() {
-  const email = el("input", { type: "email", maxlength: 120, autocomplete: "email", "aria-label": "Email", placeholder: "Email" });
-  return el("div.compose", {}, email, el("button", { type: "button", onclick: act(async () => { await api("/api/auth/email", { email: email.value }); toast("Email kabinetga ulangan bo‘lsa, kirish havolasi yuborildi"); }) }, "Havola yuborish"));
+  document.getElementById("bottom").replaceChildren();
+  page(authScreen({ cfg, start, onCreated: (f) => { fresh = f; } }));
 }
 
 // ---- new listing ----------------------------------------------------------------------------
@@ -387,6 +372,7 @@ function draw() {
   document.getElementById("bottom").replaceChildren(...GROUPS.map((g) => el("a", { href: "#" + g[1][0][0], "aria-current": g === group ? "true" : null }, icon(ICON[g[1][0][0]], 23), g[0], count(g[1][0][0]))));
   page(el("div.shell", {}, el("nav.side", { "aria-label": "Kabinet" }, GROUPS.map(([name, items]) => el("section", {}, el("h2", {}, name), items.map(([id, text]) => el("a", { href: "#" + id, "aria-current": cur === id ? "page" : null }, icon(ICON[id], 20), text, count(id)))))), el("div.stack", {},
     el("div.row.between", {}, el("div.row", {}, el("h1", {}, home.name), home.verified && el("span.verified", {}, icon("shield", 18), "Tekshirilgan"), home.plan.plan !== "free" && el("span.badge.ok", {}, PLAN_NAME[home.plan.plan])), el("a.btn.primary", { href: "#yangi" }, "Yangi taklif")),
+    fresh && secureCard({ cfg, fresh, name: home.name, close: () => { fresh = null; draw(); } }),
     freshKey && keyCard(freshKey, home.name, () => { freshKey = null; draw(); }),
     home.suspended && cur !== "hisob" && el("div.note.bad", { role: "alert" }, "Hisobingiz ma’muriyat tomonidan to‘xtatilgan. Takliflaringiz ko‘rinmaydi."),
     cur === "bronlar" && home.bookings.length > 0 && el("div.tiles", {}, [["Tasdiqlangan daromad" + (cfg.testPayments ? " (sinov)" : ""), home.sums.earned, som], ["Tasdiqlangan mehmonlar", home.sums.guests], ["Javob kutayotgan bronlar", home.sums.waiting]].map(([k, v, f]) => el("div.card.tile", {}, counter(k, v, f), el("span.muted", {}, k)))),

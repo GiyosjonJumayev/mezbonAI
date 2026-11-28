@@ -1,5 +1,5 @@
 // Offline support and push notifications. Everything is network first, so an update is never hidden by the cache.
-const CACHE = "silkroad-12";
+const CACHE = "silkroad-13";
 const SHELL = ["/", "/theme.js", "/app.css", "/components.css", "/common.js", "/art.js", "/pwa.js", "/tourist.js", "/trip.js", "/explore.js", "/price.js", "/icon.svg", "/fonts/onest-latin-wght-normal.woff2"];
 
 self.addEventListener("install", (e) => { e.waitUntil(caches.open(CACHE).then((c) => c.addAll(SHELL)).then(() => self.skipWaiting())); });

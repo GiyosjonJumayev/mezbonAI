@@ -1,5 +1,6 @@
 // Provider accounts: access keys, sessions, one-time links and passkeys. Only hashes of secrets are stored.
 import { generateAuthenticationOptions, generateRegistrationOptions, verifyAuthenticationResponse, verifyRegistrationResponse } from "@simplewebauthn/server";
+import { randomInt, timingSafeEqual } from "node:crypto";
 import { PROVIDER_TYPES } from "../lib/i18n.mjs";
 import { cleanEmail, cleanPhone } from "./mail.mjs";
 import { ago, bad, DAY, fail, id, known, secret, sha256, str } from "../lib/util.mjs";
@@ -14,7 +15,20 @@ class HostRef {
 }
 export const asHost = (hostId) => new HostRef(hostId);
 
+const CODE_MIN = 10, CODE_TRIES = 5;
+const codeHash = (email, code) => sha256(`${String(email).toLowerCase()}|${code}`);
+const codeFailed = () => fail(401, "Kod noto‘g‘ri yoki eskirgan", "code");
+
 export function createAccounts({ db, audit, site }) {
+  /** Spends a code: it must be the newest of its kind for that address, unexpired, and within its tries. */
+  async function useCode(email, code, purpose, hostId = null) {
+    const c = typeof email === "string" && /^\d{6}$/.test(String(code ?? "").trim()) ? await db.one("SELECT * FROM login_codes WHERE lower(email)=lower(?) AND purpose=? AND expires_at > now() AND (?::text IS NULL OR host_id=?) ORDER BY id DESC LIMIT 1", email.trim(), purpose, hostId, hostId) : null;
+    if (!c) throw codeFailed();
+    const r = await db.one("UPDATE login_codes SET attempts=attempts+1 WHERE id=? AND attempts < ? RETURNING attempts", c.id, CODE_TRIES);
+    if (!r || !timingSafeEqual(codeHash(email.trim(), String(code).trim()), c.code_hash)) throw codeFailed();
+    await db.run("DELETE FROM login_codes WHERE host_id=? AND purpose=?", c.host_id, purpose);
+    return c.host_id;
+  }
   const denied = () => fail(401, "Kirish havolasi noto‘g‘ri yoki eskirgan", "auth");
   const future = (ms) => new Date(Date.now() + ms).toISOString();
 
@@ -130,6 +144,28 @@ export function createAccounts({ db, audit, site }) {
       try { await db.run("UPDATE hosts SET email=? WHERE id=?", email, c.host_id); } catch (e) { if (e.code === "23505") throw fail(409, "Bu email boshqa kabinetga ulangan"); throw e; }
       await audit(c.host_id, "email_confirmed", c.host_id);
       return { ok: true };
+    },
+    // ---- six-digit codes by e-mail -------------------------------------------------------------------
+    /** A new code replaces older ones of the same kind. Returned once, to be e-mailed; only its hash is kept. */
+    async emailCode(hostId, email, purpose = "login") {
+      const code = String(randomInt(0, 1_000_000)).padStart(6, "0");
+      await db.run("DELETE FROM login_codes WHERE host_id=? AND purpose=?", hostId, purpose);
+      await db.run("INSERT INTO login_codes (host_id,purpose,email,code_hash,expires_at) VALUES (?,?,?,?,?)", hostId, purpose, email, codeHash(email, code), future(CODE_MIN * 60e3));
+      return code;
+    },
+    /** Signs in with the code from the e-mail. Five tries per code; every failure looks the same. */
+    async signInWithCode(email, code, label) {
+      const host = await useCode(email, code, "login");
+      return openSession(host, label);
+    },
+    /** Confirms the provider's own address with the code sent to it. */
+    async verifyEmailCode(credential, code) {
+      const h = await authHost(credential), c = await db.one("SELECT email FROM login_codes WHERE host_id=? AND purpose='verify' ORDER BY id DESC LIMIT 1", h.id);
+      if (!c) throw codeFailed();
+      await useCode(c.email, code, "verify", h.id);
+      try { await db.run("UPDATE hosts SET email=? WHERE id=?", c.email, h.id); } catch (e) { if (e.code === "23505") throw fail(409, "Bu email boshqa kabinetga ulangan"); throw e; }
+      await audit(h.id, "email_confirmed", h.id);
+      return { ok: true, email: c.email };
     },
     hostByEmail: (email) => db.one("SELECT id, email FROM hosts WHERE lower(email)=lower(?)", email),
     async account(credential) {
